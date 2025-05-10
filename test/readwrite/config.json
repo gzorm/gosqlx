@@ -1,0 +1,22 @@
+{
+  "production": {
+    "main": {
+      "type": "mysql",
+      "driver": "mysql",
+      "source": "user:password@tcp(master.mysql.example.com:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local",
+      "maxIdle": 10,
+      "maxOpen": 100,
+      "maxLifetime": 3600,
+      "debug": false
+    },
+    "main_readonly": {
+      "type": "mysql",
+      "driver": "mysql",
+      "source": "readonly_user:password@tcp(slave.mysql.example.com:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local",
+      "maxIdle": 20,
+      "maxOpen": 200,
+      "maxLifetime": 3600,
+      "debug": false
+    }
+  }
+}

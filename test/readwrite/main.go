@@ -1,0 +1,271 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"github.com/gzorm/gosqlx"
+	"github.com/gzorm/gosqlx/query"
+
+	"log"
+)
+
+func initMySQLConfig() gosqlx.ConfigMap {
+	// 创建配置映射
+	configs := gosqlx.ConfigMap{
+		"production": {
+			"main": &gosqlx.Config{
+				Type:        gosqlx.MySQL,
+				Driver:      "mysql",
+				Source:      "user:password@tcp(master.mysql.example.com:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local",
+				MaxIdle:     10,
+				MaxOpen:     100,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+			"main_readonly": &gosqlx.Config{
+				Type:        gosqlx.MySQL,
+				Driver:      "mysql",
+				Source:      "readonly_user:password@tcp(slave.mysql.example.com:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local",
+				MaxIdle:     20,
+				MaxOpen:     200,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+		},
+	}
+
+	return configs
+}
+func initPostgresConfig() gosqlx.ConfigMap {
+	configs := gosqlx.ConfigMap{
+		"production": {
+			"main": &gosqlx.Config{
+				Type:        gosqlx.PostgreSQL,
+				Driver:      "postgres",
+				Source:      "host=master.postgres.example.com port=5432 user=postgres password=password dbname=mydb sslmode=disable",
+				MaxIdle:     10,
+				MaxOpen:     100,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+			"main_readonly": &gosqlx.Config{
+				Type:        gosqlx.PostgreSQL,
+				Driver:      "postgres",
+				Source:      "host=slave.postgres.example.com port=5432 user=postgres_readonly password=password dbname=mydb sslmode=disable",
+				MaxIdle:     20,
+				MaxOpen:     200,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+		},
+	}
+
+	return configs
+}
+func initOracleConfig() gosqlx.ConfigMap {
+	configs := gosqlx.ConfigMap{
+		"production": {
+			"main": &gosqlx.Config{
+				Type:        gosqlx.Oracle,
+				Driver:      "oracle",
+				Source:      "oracle://user:password@master.oracle.example.com:1521/service_name",
+				MaxIdle:     10,
+				MaxOpen:     100,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+			"main_readonly": &gosqlx.Config{
+				Type:        gosqlx.Oracle,
+				Driver:      "oracle",
+				Source:      "oracle://readonly_user:password@slave.oracle.example.com:1521/service_name",
+				MaxIdle:     20,
+				MaxOpen:     200,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+		},
+	}
+
+	return configs
+}
+func initSQLServerConfig() gosqlx.ConfigMap {
+	configs := gosqlx.ConfigMap{
+		"production": {
+			"main": &gosqlx.Config{
+				Type:        gosqlx.SQLServer,
+				Driver:      "sqlserver",
+				Source:      "sqlserver://user:password@master.sqlserver.example.com:1433?database=mydb",
+				MaxIdle:     10,
+				MaxOpen:     100,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+			"main_readonly": &gosqlx.Config{
+				Type:        gosqlx.SQLServer,
+				Driver:      "sqlserver",
+				Source:      "sqlserver://readonly_user:password@slave.sqlserver.example.com:1433?database=mydb",
+				MaxIdle:     20,
+				MaxOpen:     200,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+		},
+	}
+
+	return configs
+}
+func initSQLiteConfig() gosqlx.ConfigMap {
+	configs := gosqlx.ConfigMap{
+		"development": {
+			"main": &gosqlx.Config{
+				Type:        "sqlite",
+				Driver:      "sqlite3",
+				Source:      "file:mydb.sqlite?cache=shared&mode=rwc",
+				MaxIdle:     5,
+				MaxOpen:     10,
+				MaxLifetime: 3600,
+				Debug:       true,
+			},
+		},
+	}
+
+	return configs
+}
+
+func main() {
+	// 创建配置提供者
+	configs := initMySQLConfig() // 使用上面定义的配置函数
+	provider := gosqlx.NewConfigProvider(configs)
+
+	// 创建数据库管理器
+	manager := gosqlx.NewDatabaseManager(provider)
+	//if err != nil {
+	//	log.Fatalf("初始化数据库管理器失败: %v", err)
+	//}
+
+	// 使用读写分离功能
+	useReadWriteSeparation(manager)
+}
+func useReadWriteSeparation(manager *gosqlx.DatabaseManager) {
+	// 创建上下文
+	ctx := context.Background()
+
+	// 获取读写数据库连接
+	db, err := manager.GetDatabase(ctx, "main", gosqlx.ModeReadWrite)
+	if err != nil {
+		log.Fatalf("获取读写数据库连接失败: %v", err)
+	}
+
+	// 执行写操作
+	_, err = db.ExecContext(ctx, "INSERT INTO users (username, email) VALUES (?, ?)", "newuser", "newuser@example.com")
+	if err != nil {
+		log.Fatalf("执行写操作失败: %v", err)
+	}
+
+	log.Println("写操作成功")
+
+	// 使用只读模式查询
+	useReadOnlyMode(manager)
+}
+func useReadOnlyMode(manager *gosqlx.DatabaseManager) {
+	// 创建上下文
+	ctx := context.Background()
+
+	// 获取只读数据库连接
+	db, err := manager.GetDatabase("production", "main_readonly", gosqlx.ModeReadOnly)
+	if err != nil {
+		log.Fatalf("获取只读数据库连接失败: %v", err)
+	}
+
+	// 执行读操作
+	var count int
+	err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
+	if err != nil {
+		log.Fatalf("执行读操作失败: %v", err)
+	}
+
+	log.Printf("读操作成功，用户总数: %d", count)
+}
+func useQueryBuilderWithReadWriteSeparation(manager *gosqlx.DatabaseManager) {
+	// 获取读写数据库
+	rwDB, err := manager.GetDatabase("production", "main", gosqlx.ModeReadWrite)
+	if err != nil {
+		log.Fatalf("获取读写数据库失败: %v", err)
+	}
+
+	// 获取只读数据库
+	roDB, err := manager.GetDatabase("production", "main_readonly", gosqlx.ModeReadOnly)
+	if err != nil {
+		log.Fatalf("获取只读数据库失败: %v", err)
+	}
+
+	// 使用读写数据库进行写操作
+	rwQuery := query.NewQuery(rwDB.DB())
+	_, err = rwQuery.Table("users").
+		Exec("INSERT INTO users (username, email) VALUES (?, ?)", "queryuser", "query@example.com")
+	if err != nil {
+		log.Fatalf("Query构建器写操作失败: %v", err)
+	}
+
+	// 使用只读数据库进行读操作
+	roQuery := query.NewQuery(roDB.DB())
+	var users []User
+	err = roQuery.Table("users").
+		Select("id", "username", "email").
+		Where("username LIKE ?", "query%").
+		Get(&users)
+	if err != nil {
+		log.Fatalf("Query构建器读操作失败: %v", err)
+	}
+
+	log.Printf("Query构建器读操作成功，查询到 %d 条记录", len(users))
+}
+func useTransactionWithReadWriteSeparation(manager *gosqlx.DatabaseManager) {
+	// 获取读写数据库（事务必须在读写库上执行）
+	db, err := manager.GetDatabase("production", "main", gosqlx.ModeReadWrite)
+	if err != nil {
+		log.Fatalf("获取读写数据库失败: %v", err)
+	}
+
+	// 开始事务
+	tx, err := db.Begin()
+	if err != nil {
+		log.Fatalf("开始事务失败: %v", err)
+	}
+
+	// 执行事务操作
+	_, err = tx.Exec("INSERT INTO users (username, email) VALUES (?, ?)", "txuser", "tx@example.com")
+	if err != nil {
+		tx.Rollback()
+		log.Fatalf("事务操作失败: %v", err)
+	}
+
+	// 提交事务
+	err = tx.Commit()
+	if err != nil {
+		log.Fatalf("提交事务失败: %v", err)
+	}
+
+	log.Println("事务操作成功")
+}
+func loadConfigFromFile() {
+	// 创建文件配置加载器
+	loader := gosqlx.NewFileConfigLoader("config/database.json")
+
+	// 加载配置
+	configs, err := loader.Load()
+	if err != nil {
+		log.Fatalf("加载配置失败: %v", err)
+	}
+
+	// 创建配置提供者
+	provider := gosqlx.NewConfigProvider(configs)
+
+	// 创建数据库管理器
+	manager := gosqlx.NewDatabaseManager(provider)
+	if err != nil {
+		log.Fatalf("初始化数据库管理器失败: %v", err)
+	}
+	fmt.Println(manager)
+	// 使用数据库管理器...
+}
