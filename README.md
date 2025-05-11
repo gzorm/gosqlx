@@ -254,13 +254,9 @@ gosqlx.RegisterAdapter("mycustom", func(config *gosqlx.Config) gosqlx.Adapter {
 - Mongodb
 - SQLite
 ## 贡献指南
-欢迎贡献代码、报告问题或提出改进建议。请遵循以下步骤：
+欢迎贡献代码、报告问题或提出改进建议。
 
-1. Fork 项目
-2. 创建您的特性分支 ( git checkout -b feature/amazing-feature )
-3. 提交您的更改 ( git commit -m 'Add some amazing feature' )
-4. 推送到分支 ( git push origin feature/amazing-feature )
-5. 打开一个 Pull Request
+ 
 ## 许可证
 本项目采用 Apache 2.0 许可证 - 详情请参阅 LICENSE 文件。
 
