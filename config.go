@@ -14,6 +14,7 @@ const (
 	Oracle     DatabaseType = "oracle"
 	SQLServer  DatabaseType = "sqlserver"
 	SQLite     DatabaseType = "sqlite3"
+	MongoDB    DatabaseType = "mongodb"
 )
 
 // Config 数据库配置结构

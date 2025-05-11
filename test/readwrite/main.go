@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gzorm/gosqlx"
 	"github.com/gzorm/gosqlx/query"
@@ -131,7 +132,32 @@ func initSQLiteConfig() gosqlx.ConfigMap {
 
 	return configs
 }
+func initMongoDBConfig() gosqlx.ConfigMap {
+	configs := gosqlx.ConfigMap{
+		"production": {
+			"main": &gosqlx.Config{
+				Type:        gosqlx.MongoDB,
+				Driver:      "mongodb",
+				Source:      "mongodb://user:password@master.mongodb.example.com:27017/dbname",
+				MaxIdle:     10,
+				MaxOpen:     100,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+			"main_readonly": &gosqlx.Config{
+				Type:        gosqlx.MongoDB,
+				Driver:      "mongodb",
+				Source:      "mongodb://readonly_user:password@slave.mongodb.example.com:27017/dbname",
+				MaxIdle:     20,
+				MaxOpen:     200,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+		},
+	}
 
+	return configs
+}
 func main() {
 	// 创建配置提供者
 	configs := initMySQLConfig() // 使用上面定义的配置函数
@@ -302,4 +328,99 @@ func loadConfigFromFile() {
 type User struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
+}
+
+func useMongoDBQueryBuilder(manager *gosqlx.DatabaseManager) {
+	// 创建 MongoDB 上下文
+	dbCtx := &gosqlx.Context{
+		Nick: "main",
+		Mode: gosqlx.ModeReadWrite,
+	}
+
+	// 获取 MongoDB 连接
+	db, err := manager.GetDatabase(dbCtx)
+	if err != nil {
+		log.Fatalf("获取 MongoDB 连接失败: %v", err)
+	}
+
+	// 使用查询构建器构建 MongoDB 聚合管道查询
+	q := query.NewQuery(db.DB())
+
+	// 示例1：简单查询
+	var users []User
+	err = q.Table("users").
+		Select("_id", "username", "email").
+		Where("active", true).
+		Limit(10).
+		Get(&users)
+
+	if err != nil {
+		log.Fatalf("MongoDB 查询失败: %v", err)
+	}
+
+	log.Printf("查询到 %d 个用户", len(users))
+
+	// 示例2：复杂聚合管道查询
+	var userArticles []UserArticle
+	q = query.NewQuery(db.DB())
+	err = q.Table("users").
+		Select("_id", "username", "email", "articles").
+		Lookup("articles", "_id", "user_id", "articles").
+		Unwind("articles").
+		Match("articles.status", "published").
+		AddField("fullName", map[string]interface{}{
+			"$concat": []string{"$firstName", " ", "$lastName"},
+		}).
+		Sort(map[string]int{
+			"articles.created_at": -1,
+		}).
+		Limit(20).
+		Get(&userArticles)
+
+	if err != nil {
+		log.Fatalf("MongoDB 聚合查询失败: %v", err)
+	}
+
+	log.Printf("查询到 %d 个用户文章", len(userArticles))
+
+	// 示例3：分组统计查询
+	var stats []ArticleStats
+	q = query.NewQuery(db.DB())
+	err = q.Table("articles").
+		GroupBy("category").
+		GroupCount("count").
+		GroupSum("views", "totalViews").
+		GroupAvg("rating", "avgRating").
+		Sort(map[string]int{
+			"count": -1,
+		}).
+		Get(&stats)
+
+	if err != nil {
+		log.Fatalf("MongoDB 分组统计查询失败: %v", err)
+	}
+
+	log.Printf("查询到 %d 个分类统计", len(stats))
+}
+
+// UserArticle 用户文章结构
+type UserArticle struct {
+	ID       string `json:"_id" bson:"_id"`
+	Username string `json:"username" bson:"username"`
+	Email    string `json:"email" bson:"email"`
+	Article  struct {
+		ID        string    `json:"_id" bson:"_id"`
+		Title     string    `json:"title" bson:"title"`
+		Content   string    `json:"content" bson:"content"`
+		Status    string    `json:"status" bson:"status"`
+		CreatedAt time.Time `json:"created_at" bson:"created_at"`
+	} `json:"article" bson:"article"`
+}
+
+// ArticleStats 文章统计结构
+type ArticleStats struct {
+	Category   string  `json:"_id" bson:"_id"`
+	Count      int     `json:"count" bson:"count"`
+	TotalViews int     `json:"totalViews" bson:"totalViews"`
+	AvgRating  float64 `json:"avgRating" bson:"avgRating"`
 }

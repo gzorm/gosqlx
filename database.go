@@ -4,10 +4,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	oracle "github.com/seelly/gorm-oracle"
 	"reflect"
 	"strings"
 	"sync"
+
+	oracle "github.com/seelly/gorm-oracle"
 
 	"gorm.io/driver/sqlite"
 
@@ -106,7 +107,48 @@ func NewDatabase(ctx *Context, config *Config) (*Database, error) {
 	if config.Debug {
 		gormConfig.Logger = logger.Default.LogMode(logger.Info)
 	}
+	// MongoDB 需要特殊处理
+	if config.Type == MongoDB {
+		// 从连接字符串中解析数据库名称
+		// MongoDB 连接字符串格式通常为：mongodb://user:pass@host:port/dbname
+		dbName := ""
+		parts := strings.Split(config.Source, "/")
+		if len(parts) > 3 {
+			dbNameParts := strings.Split(parts[3], "?")
+			dbName = dbNameParts[0]
+		}
 
+		if dbName == "" {
+			dbName = "admin" // 默认数据库名
+		}
+
+		// MongoDB 使用自定义适配器，不使用 GORM 的方言
+		adapterInstance := adapter.NewMongoDB(config.Source, dbName)
+
+		// 设置连接池参数
+		adapterInstance.WithMaxIdle(config.MaxIdle)
+		adapterInstance.WithMaxOpen(config.MaxOpen)
+		adapterInstance.WithMaxLifetime(config.MaxLifetime)
+		adapterInstance.WithDebug(config.Debug)
+
+		// 连接 MongoDB
+		_, _, err := adapterInstance.Connect()
+		if err != nil {
+			return nil, err
+		}
+
+		// 创建数据库操作实例
+		database := &Database{
+			db:       nil, // MongoDB 不使用 GORM
+			sqlDB:    nil, // MongoDB 不使用标准 SQL
+			dbType:   config.Type,
+			deadlock: NewDeadlock(ctx),
+			ctx:      ctx,
+			adapter:  adapterInstance,
+		}
+
+		return database, nil
+	}
 	// 根据数据库类型创建方言
 	var dialector gorm.Dialector
 	switch config.Type {
@@ -183,6 +225,8 @@ func (d *Database) DSN() string {
 		return adapter.DSN
 	case *adapter.Oracle:
 		return adapter.DSN
+	case *adapter.MongoDB:
+		return adapter.URI
 	default:
 		return ""
 	}
@@ -248,6 +292,15 @@ func (d *Database) FindOrder(out interface{}, order, where string, values ...int
 func (d *Database) Lock(out interface{}, ids ...interface{}) error {
 	// 添加死锁检测
 	d.deadlock.Attach(out)
+	// MongoDB 不支持标准的 FOR UPDATE 锁定
+	if d.dbType == MongoDB {
+		// 对于 MongoDB，可以使用 findAndModify 操作或事务来实现锁定
+		// 这里简化处理，仅返回查询结果
+		if len(ids) > 0 {
+			return d.Model(out).Where(reflectKeys(out), ids...).FirstOrInit(out).Error
+		}
+		return d.Model(out).FirstOrInit(out, ids...).Error
+	}
 
 	// 根据数据库类型选择锁定语法
 	lockOption := "FOR UPDATE"
@@ -285,7 +338,12 @@ func (d *Database) LockWhere(out interface{}, where string, values ...interface{
 // LockOrder 按顺序锁定记录
 func (d *Database) LockOrder(out interface{}, order, where string, values ...interface{}) error {
 	d.deadlock.Attach(out)
-
+	// MongoDB 不支持标准的 FOR UPDATE 锁定
+	if d.dbType == MongoDB {
+		// 对于 MongoDB，可以使用 findAndModify 操作或事务来实现锁定
+		// 这里简化处理，仅返回查询结果
+		return d.Model(out).Where(formatWhere(where), values...).Order(order).FirstOrInit(out).Error
+	}
 	// 根据数据库类型选择锁定语法
 	lockOption := "FOR UPDATE"
 	switch d.dbType {
