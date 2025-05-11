@@ -1,6 +1,6 @@
 # GoSQLX - 高性能多数据库适配器与查询构建框架
 ## 简介
-GoSQLX 是一个功能强大的 Go 语言数据库操作框架，提供了统一的接口来操作多种关系型数据库，包括 MySQL、PostgreSQL、Oracle、SQL Server 和 SQLite。它基于 GORM 和标准库构建，同时提供了更高级的抽象和功能扩展。
+GoSQLX 是一个功能强大的 Go 语言数据库操作框架，提供了统一的接口来操作多种关系型数据库，包括 MySQL、PostgreSQL、Oracle、SQL Server、Tidb、Mongodb  和 SQLite。它基于 GORM 和标准库构建，同时提供了更高级的抽象和功能扩展。
 
 ## 特性
 - 多数据库适配 ：无缝支持 MySQL、PostgreSQL、Oracle、SQL Server、Tidb、Mongodb 和 SQLite 等主流数据库
