@@ -3,11 +3,12 @@ package test
 import (
 	"context"
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/gzorm/gosqlx"
 	"github.com/gzorm/gosqlx/builder"
 	"github.com/gzorm/gosqlx/query"
-	"testing"
-	"time"
 )
 
 // 测试用的用户模型

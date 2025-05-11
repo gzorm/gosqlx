@@ -1,8 +1,8 @@
 package main
 
 import (
-	"context"
 	"fmt"
+
 	"github.com/gzorm/gosqlx"
 	"github.com/gzorm/gosqlx/query"
 
@@ -138,7 +138,11 @@ func main() {
 	provider := gosqlx.NewConfigProvider(configs)
 
 	// 创建数据库管理器
-	manager := gosqlx.NewDatabaseManager(provider)
+	configManager := gosqlx.NewConfigManager(provider)
+
+	//
+	manager := gosqlx.NewDatabaseManager(configManager)
+
 	//if err != nil {
 	//	log.Fatalf("初始化数据库管理器失败: %v", err)
 	//}
@@ -147,17 +151,21 @@ func main() {
 	useReadWriteSeparation(manager)
 }
 func useReadWriteSeparation(manager *gosqlx.DatabaseManager) {
-	// 创建上下文
-	ctx := context.Background()
+
+	// 创建数据库上下文
+	dbCtx := &gosqlx.Context{
+		Nick: "main",
+		Mode: gosqlx.ModeReadWrite,
+	}
 
 	// 获取读写数据库连接
-	db, err := manager.GetDatabase(ctx, "main", gosqlx.ModeReadWrite)
+	db, err := manager.GetDatabase(dbCtx)
 	if err != nil {
 		log.Fatalf("获取读写数据库连接失败: %v", err)
 	}
 
 	// 执行写操作
-	_, err = db.ExecContext(ctx, "INSERT INTO users (username, email) VALUES (?, ?)", "newuser", "newuser@example.com")
+	err = db.Exec("INSERT INTO users (username, email) VALUES (?, ?)", "newuser", "newuser@example.com")
 	if err != nil {
 		log.Fatalf("执行写操作失败: %v", err)
 	}
@@ -168,18 +176,21 @@ func useReadWriteSeparation(manager *gosqlx.DatabaseManager) {
 	useReadOnlyMode(manager)
 }
 func useReadOnlyMode(manager *gosqlx.DatabaseManager) {
-	// 创建上下文
-	ctx := context.Background()
+	// 创建数据库上下文
+	dbCtx := &gosqlx.Context{
+		Nick: "main_readonly",
+		Mode: gosqlx.ModeReadOnly,
+	}
 
 	// 获取只读数据库连接
-	db, err := manager.GetDatabase("production", "main_readonly", gosqlx.ModeReadOnly)
+	db, err := manager.GetDatabase(dbCtx)
 	if err != nil {
 		log.Fatalf("获取只读数据库连接失败: %v", err)
 	}
 
 	// 执行读操作
 	var count int
-	err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
+	err = db.ScanRaw(&count, "SELECT COUNT(*) FROM users ")
 	if err != nil {
 		log.Fatalf("执行读操作失败: %v", err)
 	}
@@ -187,22 +198,32 @@ func useReadOnlyMode(manager *gosqlx.DatabaseManager) {
 	log.Printf("读操作成功，用户总数: %d", count)
 }
 func useQueryBuilderWithReadWriteSeparation(manager *gosqlx.DatabaseManager) {
-	// 获取读写数据库
-	rwDB, err := manager.GetDatabase("production", "main", gosqlx.ModeReadWrite)
+	// 创建读写数据库上下文
+	rwCtx := &gosqlx.Context{
+		Nick: "main",
+		Mode: gosqlx.ModeReadWrite,
+	}
+
+	// 获取读写数据库连接
+	rwDB, err := manager.GetDatabase(rwCtx)
 	if err != nil {
 		log.Fatalf("获取读写数据库失败: %v", err)
 	}
 
-	// 获取只读数据库
-	roDB, err := manager.GetDatabase("production", "main_readonly", gosqlx.ModeReadOnly)
+	// 创建只读数据库上下文
+	roCtx := &gosqlx.Context{
+		Nick: "main_readonly",
+		Mode: gosqlx.ModeReadOnly,
+	}
+
+	// 获取只读数据库连接
+	roDB, err := manager.GetDatabase(roCtx)
 	if err != nil {
 		log.Fatalf("获取只读数据库失败: %v", err)
 	}
 
 	// 使用读写数据库进行写操作
-	rwQuery := query.NewQuery(rwDB.DB())
-	_, err = rwQuery.Table("users").
-		Exec("INSERT INTO users (username, email) VALUES (?, ?)", "queryuser", "query@example.com")
+	err = rwDB.Exec("INSERT INTO users (username, email) VALUES (?, ?)", "queryuser", "query@example.com")
 	if err != nil {
 		log.Fatalf("Query构建器写操作失败: %v", err)
 	}
@@ -221,8 +242,14 @@ func useQueryBuilderWithReadWriteSeparation(manager *gosqlx.DatabaseManager) {
 	log.Printf("Query构建器读操作成功，查询到 %d 条记录", len(users))
 }
 func useTransactionWithReadWriteSeparation(manager *gosqlx.DatabaseManager) {
+	// 创建读写数据库上下文
+	rwCtx := &gosqlx.Context{
+		Nick: "main",
+		Mode: gosqlx.ModeReadWrite,
+	}
+
 	// 获取读写数据库（事务必须在读写库上执行）
-	db, err := manager.GetDatabase("production", "main", gosqlx.ModeReadWrite)
+	db, err := manager.GetDatabase(rwCtx)
 	if err != nil {
 		log.Fatalf("获取读写数据库失败: %v", err)
 	}
@@ -234,7 +261,7 @@ func useTransactionWithReadWriteSeparation(manager *gosqlx.DatabaseManager) {
 	}
 
 	// 执行事务操作
-	_, err = tx.Exec("INSERT INTO users (username, email) VALUES (?, ?)", "txuser", "tx@example.com")
+	err = tx.Exec("INSERT INTO users (username, email) VALUES (?, ?)", "txuser", "tx@example.com")
 	if err != nil {
 		tx.Rollback()
 		log.Fatalf("事务操作失败: %v", err)
@@ -260,12 +287,19 @@ func loadConfigFromFile() {
 
 	// 创建配置提供者
 	provider := gosqlx.NewConfigProvider(configs)
+	// 创建数据库管理器
+	configManager := gosqlx.NewConfigManager(provider)
 
 	// 创建数据库管理器
-	manager := gosqlx.NewDatabaseManager(provider)
-	if err != nil {
-		log.Fatalf("初始化数据库管理器失败: %v", err)
-	}
+	manager := gosqlx.NewDatabaseManager(configManager)
+	//if err != nil {
+	//	log.Fatalf("初始化数据库管理器失败: %v", err)
+	//}
 	fmt.Println(manager)
 	// 使用数据库管理器...
+}
+
+type User struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
 }

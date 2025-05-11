@@ -43,15 +43,21 @@ func main() {
     
     // 创建配置提供者
     provider := gosqlx.NewConfigProvider(configs)
-    
+
+    // 创建配置管理器
+    configManager := gosqlx.NewConfigManager(provider)
+
     // 创建数据库管理器
-    manager, err := gosqlx.NewDatabaseManager(provider)
-    if err != nil {
-        panic(err)
-    }
+     manager := gosqlx.NewDatabaseManager(configManager)   
+
+    // 创建数据库上下文
+	dbCtx := &gosqlx.Context{
+		Nick: "main",
+		Mode: gosqlx.ModeReadWrite,
+	}
     
     // 获取数据库连接
-    db, err := manager.GetDatabase("development", "main", gosqlx.ModeReadWrite)
+    db, err := manager.GetDatabase(dbCtx)
     if err != nil {
         panic(err)
     }
@@ -142,7 +148,7 @@ if err != nil {
 }
 
 // 执行事务操作
-_, err = tx.Exec("INSERT INTO users (username, email) VALUES (?, ?)", "newuser", "newuser@example.com")
+err = tx.Exec("INSERT INTO users (username, email) VALUES (?, ?)", "newuser", "newuser@example.com")
 if err != nil {
     tx.Rollback()
     // 处理错误
@@ -156,30 +162,44 @@ if err := tx.Commit(); err != nil {
 </code></pre>
 ### 读写分离使用
 <pre class="command-line"><code>
-// 获取读写数据库连接（用于写操作）
-rwDB, err := manager.GetDatabase("production", "main", gosqlx.ModeReadWrite)
-if err != nil {
-    // 处理错误
+// 创建读写数据库上下文
+rwCtx := &gosqlx.Context{
+  Nick: "main",
+  Mode: gosqlx.ModeReadWrite,
 }
 
-// 获取只读数据库连接（用于读操作）
-roDB, err := manager.GetDatabase("production", "main_readonly", gosqlx.ModeReadOnly)
+// 获取读写数据库连接
+rwDB, err := manager.GetDatabase(rwCtx)
 if err != nil {
-    // 处理错误
+  log.Fatalf("获取读写数据库失败: %v", err)
 }
 
-// 执行写操作
-_, err = rwDB.Exec("INSERT INTO users (username, email) VALUES (?, ?)", "newuser", "newuser@example.com")
+// 创建只读数据库上下文
+roCtx := &gosqlx.Context{
+  Nick: "main_readonly",
+  Mode: gosqlx.ModeReadOnly,
+}
+
+// 获取只读数据库连接
+roDB, err := manager.GetDatabase(roCtx)
 if err != nil {
-    // 处理错误
+  log.Fatalf("获取只读数据库失败: %v", err)
+}
+
+// 使用读写数据库进行写操作
+err = rwDB.Exec("INSERT INTO users (username, email) VALUES (?, ?)", "queryuser", "query@example.com")
+if err != nil {
+   log.Fatalf("Query构建器写操作失败: %v", err)
 }
 
 // 执行读操作
 var count int
-err = roDB.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+err = roDB.ScanRaw(&count, "SELECT COUNT(*) FROM users ")
 if err != nil {
-    // 处理错误
-}</code></pre>
+  log.Fatalf("执行读操作失败: %v", err)
+}
+
+</code></pre>
 ## 高级用法
 ### 从文件加载配置
 <pre class="command-line"><code>
@@ -193,9 +213,14 @@ if err != nil {
     panic(err)
 }
 
+ 
 // 创建配置提供者
 provider := gosqlx.NewConfigProvider(configs)
+// 创建数据库管理器
+configManager := gosqlx.NewConfigManager(provider)
 
+// 创建数据库管理器
+manager := gosqlx.NewDatabaseManager(configManager)
 
 </code></pre>
 
