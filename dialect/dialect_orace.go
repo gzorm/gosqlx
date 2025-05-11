@@ -195,3 +195,10 @@ ON (%s)
 
 	return sql
 }
+
+// 初始化方言
+func init() {
+	RegisterDialect("oracle", func() Dialect {
+		return NewOracleDialect()
+	})
+}

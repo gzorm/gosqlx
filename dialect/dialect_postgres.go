@@ -58,3 +58,10 @@ func (d *PostgresDialect) UpsertSQL(table string, columns, uniqueColumns, update
 
 	return sql
 }
+
+// 初始化方言
+func init() {
+	RegisterDialect("postgres", func() Dialect {
+		return NewPostgresDialect()
+	})
+}

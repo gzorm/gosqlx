@@ -45,3 +45,10 @@ func (d *SQLiteDialect) ModifyColumnSQL(table, column, columnType string, option
 		d.QuoteColumn(column),
 		columnType)
 }
+
+// 初始化方言
+func init() {
+	RegisterDialect("sqlite", func() Dialect {
+		return NewSQLiteDialect()
+	})
+}

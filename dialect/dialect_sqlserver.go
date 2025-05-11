@@ -177,10 +177,10 @@ func (d *SQLServerDialect) UpsertSQL(table string, columns, uniqueColumns, updat
 	}
 
 	sql := fmt.Sprintf(`
-MERGE INTO %s AS target
-USING (VALUES (%s)) AS source (%s)
-ON %s
-`, d.QuoteTable(table), strings.Join(placeholders, ", "), strings.Join(quotedColumns, ", "), strings.Join(targetJoin, " AND "))
+				MERGE INTO %s AS target
+				USING (VALUES (%s)) AS source (%s)
+				ON %s
+				`, d.QuoteTable(table), strings.Join(placeholders, ", "), strings.Join(quotedColumns, ", "), strings.Join(targetJoin, " AND "))
 
 	if len(updateColumns) > 0 {
 		sql += fmt.Sprintf("WHEN MATCHED THEN UPDATE SET %s\n", strings.Join(updateSet, ", "))
@@ -191,4 +191,11 @@ ON %s
 		strings.Join(insertValues, ", "))
 
 	return sql
+}
+
+// 初始化方言
+func init() {
+	RegisterDialect("sqlserver", func() Dialect {
+		return NewSQLServerDialect()
+	})
 }

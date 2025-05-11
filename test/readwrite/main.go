@@ -158,6 +158,32 @@ func initMongoDBConfig() gosqlx.ConfigMap {
 
 	return configs
 }
+func initTiDBConfig() gosqlx.ConfigMap {
+	configs := gosqlx.ConfigMap{
+		"production": {
+			"main": &gosqlx.Config{
+				Type:        gosqlx.TiDB,
+				Driver:      "mysql", // TiDB 使用 MySQL 驱动
+				Source:      "user:password@tcp(tidb.master.example.com:4000)/dbname?charset=utf8mb4&parseTime=True&loc=Local",
+				MaxIdle:     10,
+				MaxOpen:     100,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+			"main_readonly": &gosqlx.Config{
+				Type:        gosqlx.TiDB,
+				Driver:      "mysql", // TiDB 使用 MySQL 驱动
+				Source:      "readonly_user:password@tcp(tidb.slave.example.com:4000)/dbname?charset=utf8mb4&parseTime=True&loc=Local",
+				MaxIdle:     20,
+				MaxOpen:     200,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+		},
+	}
+
+	return configs
+}
 func main() {
 	// 创建配置提供者
 	configs := initMySQLConfig() // 使用上面定义的配置函数

@@ -15,6 +15,7 @@ const (
 	SQLServer  DatabaseType = "sqlserver"
 	SQLite     DatabaseType = "sqlite3"
 	MongoDB    DatabaseType = "mongodb"
+	TiDB       DatabaseType = "tidb"
 )
 
 // Config 数据库配置结构

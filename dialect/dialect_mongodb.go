@@ -290,3 +290,10 @@ func (d *MongoDBDialect) BuildAggregatePipeline(stages []map[string]interface{})
 
 	return fmt.Sprintf("[%s]", strings.Join(stagesStr, ", "))
 }
+
+// 初始化方言
+func init() {
+	RegisterDialect("mongodb", func() Dialect {
+		return NewMongoDBDialect()
+	})
+}

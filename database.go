@@ -162,6 +162,9 @@ func NewDatabase(ctx *Context, config *Config) (*Database, error) {
 		dialector = sqlite.Open(config.Source)
 	case Oracle:
 		dialector = oracle.Open(config.Source)
+	case TiDB:
+		// TiDB 使用 MySQL 驱动，但需要特殊处理
+		dialector = mysql.Open(config.Source)
 	default:
 		return nil, fmt.Errorf("不支持的数据库类型: %s", config.Type)
 	}
@@ -196,6 +199,8 @@ func NewDatabase(ctx *Context, config *Config) (*Database, error) {
 		adapterInstance = adapter.NewSQLServer(config.Source)
 	case Oracle:
 		adapterInstance = adapter.NewOracle(config.Source)
+	case TiDB:
+		adapterInstance = adapter.NewTiDB(config.Source)
 	default:
 		return nil, fmt.Errorf("不支持的数据库类型: %s", config.Type)
 	}
