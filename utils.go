@@ -157,6 +157,51 @@ func ReflectUpdateSQL(out interface{}) (string, []interface{}) {
 	return sql, values
 }
 
+// BatchProcess 批量处理数据
+// db: 数据库连接
+// event: 事件类型（创建或更新）
+// batchSize: 每批处理的记录数
+// rows: 要处理的数据行
+func BatchProcess(db *Database, event int, batchSize int, rows ...interface{}) error {
+	if len(rows) == 0 {
+		return nil
+	}
+
+	// 如果未指定批量大小，使用默认值
+	if batchSize <= 0 {
+		batchSize = BatchSize
+	}
+
+	// 计算批次数
+	total := len(rows)
+	batches := (total + batchSize - 1) / batchSize
+
+	// 按批次处理
+	for i := 0; i < batches; i++ {
+		start := i * batchSize
+		end := (i + 1) * batchSize
+		if end > total {
+			end = total
+		}
+
+		// 获取当前批次的数据
+		batch := rows[start:end]
+
+		// 使用 ReflectBatchSQL 生成 SQL
+		sql, values := ReflectBatchSQL(event, batch...)
+		if sql == "" {
+			continue
+		}
+
+		// 执行 SQL
+		if err := db.Exec(sql, values...); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // ReflectBatchSQL 反射生成批量插入SQL
 // 支持插入和更新操作
 func ReflectBatchSQL(event int, rows ...interface{}) (string, []interface{}) {

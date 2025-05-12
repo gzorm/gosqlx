@@ -4,10 +4,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/gzorm/gosqlx/builder"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gzorm/gosqlx/builder"
 )
 
 // Query 查询构建器
@@ -884,25 +886,73 @@ func setFieldValue(field reflect.Value, value interface{}) error {
 
 // parseInt 解析整数
 func parseInt(s string) (int64, error) {
-	return 0, nil // 实际实现省略
+	if s == "" {
+		return 0, nil
+	}
+	return strconv.ParseInt(s, 10, 64)
 }
 
 // parseUint 解析无符号整数
 func parseUint(s string) (uint64, error) {
-	return 0, nil // 实际实现省略
+	if s == "" {
+		return 0, nil
+	}
+	return strconv.ParseUint(s, 10, 64)
 }
 
 // parseFloat 解析浮点数
 func parseFloat(s string) (float64, error) {
-	return 0, nil // 实际实现省略
+	if s == "" {
+		return 0, nil
+	}
+	return strconv.ParseFloat(s, 64)
 }
 
 // parseBool 解析布尔值
 func parseBool(s string) (bool, error) {
-	return false, nil // 实际实现省略
+	if s == "" {
+		return false, nil
+	}
+
+	s = strings.ToLower(s)
+	switch s {
+	case "1", "t", "true", "yes", "y", "on":
+		return true, nil
+	case "0", "f", "false", "no", "n", "off":
+		return false, nil
+	default:
+		return false, fmt.Errorf("无法将 %q 解析为布尔值", s)
+	}
 }
 
 // parseTime 解析时间
 func parseTime(s string) (time.Time, error) {
-	return time.Time{}, nil // 实际实现省略
+	if s == "" {
+		return time.Time{}, nil
+	}
+
+	// 尝试多种常见的时间格式
+	formats := []string{
+		time.RFC3339,
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05",
+		"2006-01-02",
+		"15:04:05",
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999",
+	}
+
+	for _, format := range formats {
+		t, err := time.Parse(format, s)
+		if err == nil {
+			return t, nil
+		}
+	}
+
+	// 尝试解析 Unix 时间戳
+	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return time.Unix(i, 0), nil
+	}
+
+	return time.Time{}, fmt.Errorf("无法将 %q 解析为时间", s)
 }
