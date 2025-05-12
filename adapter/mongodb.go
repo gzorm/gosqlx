@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -363,4 +364,80 @@ func (m *MongoDB) BuildURI(host string, port int, username, password, database s
 	}
 
 	return uri
+}
+
+// QueryPage 分页查询
+func (m *MongoDB) QueryPage(out interface{}, page, pageSize int, filter interface{}, opts ...interface{}) (int64, error) {
+	if m.client == nil {
+		return 0, fmt.Errorf("MongoDB客户端未初始化")
+	}
+
+	// 参数验证
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	// 计算偏移量
+	skip := (page - 1) * pageSize
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// 解析集合名称
+	// 这里假设第一个参数是集合名称，可能需要根据实际情况调整
+	collection := ""
+	if len(opts) > 0 {
+		if collName, ok := opts[0].(string); ok {
+			collection = collName
+		}
+	}
+
+	if collection == "" {
+		// 尝试从 out 参数推断集合名称
+		outType := reflect.TypeOf(out)
+		if outType.Kind() == reflect.Ptr {
+			outType = outType.Elem()
+		}
+		collection = strings.ToLower(outType.Name())
+	}
+
+	coll := m.client.Database(m.Database).Collection(collection)
+
+	// 查询总记录数
+	total, err := coll.CountDocuments(ctx, filter)
+	if err != nil {
+		return 0, fmt.Errorf("查询总记录数失败: %w", err)
+	}
+
+	// 如果没有记录，直接返回
+	if total == 0 {
+		return 0, nil
+	}
+
+	// 查询分页数据
+	findOptions := options.Find().SetSkip(int64(skip)).SetLimit(int64(pageSize))
+
+	// 添加排序条件（如果有）
+	if len(opts) > 1 {
+		if sort, ok := opts[1].(bson.D); ok {
+			findOptions.SetSort(sort)
+		}
+	}
+
+	cursor, err := coll.Find(ctx, filter, findOptions)
+	if err != nil {
+		return 0, fmt.Errorf("查询分页数据失败: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	// 解码结果到输出参数
+	err = cursor.All(ctx, out)
+	if err != nil {
+		return 0, fmt.Errorf("解码查询结果失败: %w", err)
+	}
+
+	return total, nil
 }

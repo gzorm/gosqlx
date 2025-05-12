@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	oracle "github.com/seelly/gorm-oracle"
+	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"gorm.io/driver/sqlite"
 
@@ -352,12 +353,24 @@ func (d *Database) LockOrder(out interface{}, order, where string, values ...int
 	// 根据数据库类型选择锁定语法
 	lockOption := "FOR UPDATE"
 	switch d.dbType {
+	case MySQL:
+		lockOption = "FOR UPDATE"
 	case SQLServer:
 		lockOption = "WITH (UPDLOCK, ROWLOCK)"
 	case Oracle:
 		lockOption = "FOR UPDATE NOWAIT"
 	case PostgreSQL:
 		lockOption = "FOR UPDATE"
+	case TiDB:
+		lockOption = "FOR UPDATE" // 目前与MySQL相同，但将来可能有特殊选项
+	case SQLite:
+		// SQLite 只在事务中支持 FOR UPDATE
+		if d.db.Statement.ConnPool != nil && d.db.Statement.ConnPool.(*sql.Tx) != nil {
+			lockOption = "FOR UPDATE"
+		} else {
+			// 如果不在事务中，可以记录警告或自动开启事务
+			lockOption = "FOR UPDATE"
+		}
 	}
 
 	return d.Model(out).Set("gorm:query_option", lockOption).Where(formatWhere(where), values...).Order(order).FirstOrInit(out).Error
@@ -370,12 +383,20 @@ func (d *Database) LockShare(out interface{}, ids ...interface{}) error {
 	// 根据数据库类型选择共享锁语法
 	lockOption := "FOR SHARE"
 	switch d.dbType {
+	case MySQL:
+		lockOption = "FOR SHARE"
 	case SQLServer:
 		lockOption = "WITH (HOLDLOCK, ROWLOCK)"
 	case Oracle:
 		lockOption = "FOR UPDATE NOWAIT"
 	case PostgreSQL:
 		lockOption = "FOR SHARE"
+	case TiDB:
+		lockOption = "FOR SHARE" // 目前与MySQL相同，但将来可能有特殊选项
+	case SQLite:
+		// SQLite 不支持 FOR SHARE，但会默默忽略它
+		// 可以使用 FOR UPDATE 代替，或者不使用锁
+		lockOption = "FOR UPDATE" // 使用排他锁代替共享锁
 	}
 
 	// 多键查询
@@ -391,15 +412,34 @@ func (d *Database) LockShare(out interface{}, ids ...interface{}) error {
 func (d *Database) LockMulti(out interface{}, where string, values ...interface{}) error {
 	d.deadlock.Attach(out)
 
+	// MongoDB 不支持标准的 FOR UPDATE 锁定
+	if d.dbType == MongoDB {
+		// 对于 MongoDB，可以使用 findAndModify 操作或事务来实现锁定
+		// 这里简化处理，仅返回查询结果
+		return d.Model(out).Where(formatWhere(where), values...).Find(out).Error
+	}
+
 	// 根据数据库类型选择锁定语法
 	lockOption := "FOR UPDATE"
 	switch d.dbType {
+	case MySQL:
+		lockOption = "FOR UPDATE"
 	case SQLServer:
 		lockOption = "WITH (UPDLOCK, ROWLOCK)"
 	case Oracle:
 		lockOption = "FOR UPDATE NOWAIT"
 	case PostgreSQL:
 		lockOption = "FOR UPDATE"
+	case TiDB:
+		lockOption = "FOR UPDATE" // 目前与MySQL相同，但将来可能有特殊选项
+	case SQLite:
+		// SQLite 只在事务中支持 FOR UPDATE
+		if d.db.Statement.ConnPool != nil && d.db.Statement.ConnPool.(*sql.Tx) != nil {
+			lockOption = "FOR UPDATE"
+		} else {
+			// 如果不在事务中，可以记录警告或自动开启事务
+			lockOption = "FOR UPDATE"
+		}
 	}
 
 	return d.Model(out).Set("gorm:query_option", lockOption).Where(formatWhere(where), values...).Find(out).Error
@@ -424,9 +464,30 @@ func (d *Database) BatchInsert(table string, columns []string, values [][]interf
 			var rowPlaceholders []string
 			for range columns {
 				rowPlaceholders = append(rowPlaceholders, "?")
+			}
+			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
+			flatValues = append(flatValues, row...)
+		}
+		sql.WriteString(strings.Join(placeholders, ", "))
+
+		return d.db.Exec(sql.String(), flatValues...).Error
+
+	case TiDB:
+		// TiDB 与 MySQL 兼容，使用相同的批量插入语法
+		var sql strings.Builder
+		sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+
+		var placeholders []string
+		var flatValues []interface{}
+
+		for _, row := range values {
+			var rowPlaceholders []string
+			for range columns {
+				rowPlaceholders = append(rowPlaceholders, "?")
 				flatValues = append(flatValues, row...)
 			}
 			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
+			flatValues = append(flatValues, row...)
 		}
 
 		sql.WriteString(strings.Join(placeholders, ", "))
@@ -460,11 +521,54 @@ func (d *Database) BatchInsert(table string, columns []string, values [][]interf
 				paramCount++
 			}
 			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
+			flatValues = append(flatValues, row...)
 		}
 
 		sql.WriteString(strings.Join(placeholders, ", "))
 
 		return d.db.Exec(sql.String(), flatValues...).Error
+
+	case SQLite:
+		// SQLite 批量插入
+		var sql strings.Builder
+		sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+
+		var placeholders []string
+		var flatValues []interface{}
+
+		for _, row := range values {
+			var rowPlaceholders []string
+			for range columns {
+				rowPlaceholders = append(rowPlaceholders, "?")
+				flatValues = append(flatValues, row...)
+			}
+			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
+			flatValues = append(flatValues, row...)
+		}
+
+		sql.WriteString(strings.Join(placeholders, ", "))
+
+		return d.db.Exec(sql.String(), flatValues...).Error
+
+	case MongoDB:
+		// MongoDB 批量插入
+		// 使用 MongoDB 适配器进行批量插入
+		if mongoAdapter, ok := d.adapter.(*adapter.MongoDB); ok {
+			// 将列和值转换为文档格式
+			docs := make([]interface{}, 0, len(values))
+			for _, row := range values {
+				doc := make(map[string]interface{})
+				for i, col := range columns {
+					if i < len(row) {
+						doc[col] = row[i]
+					}
+				}
+				docs = append(docs, doc)
+			}
+			_, err := mongoAdapter.InsertMany(table, docs)
+			return err
+		}
+		return errors.New("MongoDB适配器类型断言失败")
 	}
 
 	return errors.New("不支持的数据库类型")
@@ -479,6 +583,36 @@ func (d *Database) MergeInto(table string, columns []string, values [][]interfac
 	switch d.dbType {
 	case MySQL:
 		// MySQL UPSERT (INSERT ... ON DUPLICATE KEY UPDATE)
+		var sql strings.Builder
+		sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+
+		var placeholders []string
+		var flatValues []interface{}
+
+		for _, row := range values {
+			var rowPlaceholders []string
+			for _, val := range row {
+				rowPlaceholders = append(rowPlaceholders, "?")
+				flatValues = append(flatValues, val)
+			}
+			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
+		}
+
+		sql.WriteString(strings.Join(placeholders, ", "))
+
+		if len(updateColumns) > 0 {
+			sql.WriteString(" ON DUPLICATE KEY UPDATE ")
+			var updates []string
+			for _, col := range updateColumns {
+				updates = append(updates, fmt.Sprintf("%s = VALUES(%s)", col, col))
+			}
+			sql.WriteString(strings.Join(updates, ", "))
+		}
+
+		return d.db.Exec(sql.String(), flatValues...).Error
+
+	case TiDB:
+		// TiDB 与 MySQL 兼容，使用相同的 UPSERT 语法
 		var sql strings.Builder
 		sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
 
@@ -548,6 +682,66 @@ func (d *Database) MergeInto(table string, columns []string, values [][]interfac
 		}
 
 		return d.db.Exec(sql.String(), flatValues...).Error
+
+	case SQLite:
+		// SQLite 3.24.0 及以上版本支持 UPSERT
+		var sql strings.Builder
+		sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+
+		var placeholders []string
+		var flatValues []interface{}
+
+		for _, row := range values {
+			var rowPlaceholders []string
+			for _, val := range row {
+				rowPlaceholders = append(rowPlaceholders, "?")
+				flatValues = append(flatValues, val)
+			}
+			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
+		}
+
+		sql.WriteString(strings.Join(placeholders, ", "))
+
+		if len(updateColumns) > 0 && len(keyColumns) > 0 {
+			sql.WriteString(fmt.Sprintf(" ON CONFLICT (%s) DO UPDATE SET ", strings.Join(keyColumns, ", ")))
+			var updates []string
+			for _, col := range updateColumns {
+				updates = append(updates, fmt.Sprintf("%s = excluded.%s", col, col))
+			}
+			sql.WriteString(strings.Join(updates, ", "))
+		}
+
+		return d.db.Exec(sql.String(), flatValues...).Error
+
+	case MongoDB:
+		// MongoDB 使用 upsert 操作
+		if mongoAdapter, ok := d.adapter.(*adapter.MongoDB); ok {
+			// 将列和值转换为文档格式
+			docs := make([]interface{}, 0, len(values))
+			for _, row := range values {
+				doc := make(map[string]interface{})
+				for i, col := range columns {
+					if i < len(row) {
+						doc[col] = row[i]
+					}
+				}
+				docs = append(docs, doc)
+			}
+
+			// 构建查询条件（基于键列）
+			filter := make(map[string]interface{})
+			for _, keyCol := range keyColumns {
+				filter[keyCol] = 1 // 使用键列作为过滤条件
+			}
+
+			// 创建 UpdateOptions 并设置 Upsert 为 true
+			updateOpts := options.Update().SetUpsert(true)
+
+			// 执行 upsert 操作
+			_, err := mongoAdapter.UpdateMany(table, filter, docs, updateOpts)
+			return err
+		}
+		return errors.New("MongoDB适配器类型断言失败")
 	}
 
 	return errors.New("不支持的数据库类型")
@@ -660,21 +854,19 @@ func (d *Database) QueryRows(out interface{}, sql string, values ...interface{})
 }
 
 // QueryPage 分页查询
-func (d *Database) QueryPage(out interface{}, page, pageSize int, sql string, values ...interface{}) (int64, error) {
-	var total int64
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS t", sql)
-	err := d.Raw(countSQL, values...).Scan(&total).Error
-	if err != nil {
-		return 0, err
-	}
+// out: 输出结果
+// page: 页码（从1开始）
+// pageSize: 每页记录数
+// filter: 过滤条件（可以是SQL字符串或条件映射）
+// opts: 可选参数，第一个参数通常是数据库连接
+func (d *Database) QueryPage(out interface{}, page, pageSize int, filter interface{}, opts ...interface{}) (int64, error) {
+	// 将数据库连接作为第一个可选参数传递给适配器
+	newOpts := make([]interface{}, 0, len(opts)+1)
+	newOpts = append(newOpts, d.db)
+	newOpts = append(newOpts, opts...)
 
-	if page > 0 && pageSize > 0 {
-		offset := (page - 1) * pageSize
-		sql = fmt.Sprintf("%s LIMIT %d OFFSET %d", sql, pageSize, offset)
-	}
-
-	err = d.Raw(sql, values...).Scan(out).Error
-	return total, err
+	// 根据数据库类型调用相应适配器的分页方法
+	return d.adapter.QueryPage(out, page, pageSize, filter, newOpts...)
 }
 
 // Count 计数查询

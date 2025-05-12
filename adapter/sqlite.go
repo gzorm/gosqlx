@@ -282,6 +282,96 @@ func (s *SQLite) MergeInto(db *gorm.DB, table string, columns []string, values [
 	return db.Exec(sql, flatValues...).Error
 }
 
+// QueryPage 分页查询
+func (s *SQLite) QueryPage(out interface{}, page, pageSize int, filter interface{}, opts ...interface{}) (int64, error) {
+	// 参数验证
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	// 从 opts 中提取 db 和其他参数
+	if len(opts) == 0 {
+		return 0, fmt.Errorf("缺少必要参数：数据库连接")
+	}
+
+	db, ok := opts[0].(*gorm.DB)
+	if !ok {
+		return 0, fmt.Errorf("第一个可选参数必须是 *gorm.DB 类型")
+	}
+
+	// 处理 filter 参数
+	var sql string
+	var values []interface{}
+
+	switch f := filter.(type) {
+	case string:
+		// 如果 filter 是 SQL 字符串
+		sql = f
+		// 提取剩余的参数作为 values
+		if len(opts) > 1 {
+			for _, v := range opts[1:] {
+				values = append(values, v)
+			}
+		}
+	case map[string]interface{}:
+		// 如果 filter 是条件映射，构建 WHERE 子句
+		// 这里简单实现，实际应用中可能需要更复杂的处理
+		var conditions []string
+		for k, v := range f {
+			conditions = append(conditions, fmt.Sprintf("%s = ?", k))
+			values = append(values, v)
+		}
+
+		// 假设 opts[1] 是基础 SQL（如果提供）
+		baseSQL := "SELECT * FROM unknown_table"
+		if len(opts) > 1 {
+			if s, ok := opts[1].(string); ok {
+				baseSQL = s
+			}
+		}
+
+		if len(conditions) > 0 {
+			if strings.Contains(strings.ToUpper(baseSQL), " WHERE ") {
+				sql = fmt.Sprintf("%s AND %s", baseSQL, strings.Join(conditions, " AND "))
+			} else {
+				sql = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
+			}
+		} else {
+			sql = baseSQL
+		}
+	default:
+		return 0, fmt.Errorf("不支持的过滤条件类型")
+	}
+
+	// 计算偏移量
+	offset := (page - 1) * pageSize
+
+	// 查询总记录数
+	var total int64
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s)", sql)
+	err := db.Raw(countSQL, values...).Count(&total).Error
+	if err != nil {
+		return 0, fmt.Errorf("查询总记录数失败: %w", err)
+	}
+
+	// 如果没有记录，直接返回
+	if total == 0 {
+		return 0, nil
+	}
+
+	// 查询分页数据
+	pageSQL := fmt.Sprintf("%s LIMIT %d OFFSET %d", sql, pageSize, offset)
+	err = db.Raw(pageSQL, values...).Scan(out).Error
+	if err != nil {
+		return 0, fmt.Errorf("查询分页数据失败: %w", err)
+	}
+
+	return total, nil
+}
+
 //// MergeInto 合并插入（UPSERT）- SQLite实现
 //func (s *SQLite) MergeInto(db *gorm.DB, table string, columns []string, values [][]interface{}, keyColumns []string, updateColumns []string) error {
 //	if len(values) == 0 || len(keyColumns) == 0 {
