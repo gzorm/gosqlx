@@ -263,3 +263,15 @@ gosqlx.RegisterAdapter("mycustom", func(config *gosqlx.Config) gosqlx.Adapter {
 ## 联系方式
 - 项目维护者：gzorm
 - GitHub： https://github.com/gzorm
+
+## 💖 支持项目
+
+您的支持对我们意义重大！如果GoSQLX帮助您解决了问题，请考虑：
+
+- ⭐ 给项目一个星标
+- 🔄 分享给您的同事和朋友
+- 🐛 报告您发现的问题
+- 🔧 提交PR帮助改进项目
+- 📝 分享您使用GoSQLX的经验
+
+[![给项目加星](https://img.shields.io/github/stars/gzorm/gosqlx.svg?style=social)](https://github.com/gzorm/gosqlx)
