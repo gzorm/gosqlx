@@ -172,6 +172,9 @@ func NewDatabase(ctx *Context, config *Config) (*Database, error) {
 		dialector = mysql.Open(config.Source)
 	case ClickHouse:
 		dialector = clickhouse.Open(config.Source)
+	case OceanBase:
+		// OceanBase 使用 MySQL 驱动
+		dialector = mysql.Open(config.Source)
 	default:
 		return nil, fmt.Errorf("不支持的数据库类型: %s", config.Type)
 	}
@@ -212,6 +215,8 @@ func NewDatabase(ctx *Context, config *Config) (*Database, error) {
 		adapterInstance = adapter.NewClickHouse(config.Source)
 	case MariaDB:
 		adapterInstance = adapter.NewMariaDB(config.Source)
+	case OceanBase:
+		adapterInstance = adapter.NewOceanBase(config.Source)
 	default:
 		return nil, fmt.Errorf("不支持的数据库类型: %s", config.Type)
 	}

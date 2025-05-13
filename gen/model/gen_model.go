@@ -32,6 +32,8 @@ func GenerateModels(config *Config) error {
 		generator, err = NewMariaDBGenerator(config)
 	case "clickhouse":
 		generator, err = NewClickHouseGenerator(config)
+	case "oceanbase":
+		generator, err = NewOceanBaseGenerator(config)
 	default:
 		return fmt.Errorf("不支持的数据库类型: %s", config.DBType)
 	}

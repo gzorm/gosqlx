@@ -18,7 +18,7 @@ Your support means a lot to us! If GoSQLX has helped you solve problems, please 
 GoSQLX is a powerful Go language database operation framework that provides a unified interface for operating multiple relational databases, including MySQL, PostgresSQL, Oracle, SQL Server, TiDB, MongoDB, and SQLite. It is built on GORM and the standard library, while providing higher-level abstractions and functional extensions.
 
 ## Features
-- Multi-database support: Seamlessly supports mainstream databases like MySQL, PostgresSQL, Oracle, SQL Server, TiDB, MongoDB, and SQLite
+- Multi-database support: Seamlessly supports mainstream databases like MySQL, PostgresSQL, Oracle, SQL Server, TiDB, MongoDB,ClickHouse、MariaDb、OceanBase and SQLite
 - Read-write separation: Built-in read-write separation support for easy database load balancing
 - Flexible configuration management: Supports multi-environment, multi-database configurations for complex deployment scenarios
 - Powerful query builder: Chain API design simplifies the SQL building process
@@ -258,6 +258,9 @@ gosqlx.RegisterAdapter("mycustom", func(config *gosqlx.Config) gosqlx.Adapter {
 - TiDB
 - MongoDB
 - SQLite
+- ClickHouse
+- MariaDB
+- OceanBase
 ## Contribution Guidelines
 We welcome contributions from the community! If you would like to contribute to GoSQLX, please follow these guidelines:
 

@@ -18,6 +18,7 @@ const (
 	TiDB        DatabaseType = "tidb"
 	MariaDB     DatabaseType = "mariadb"
 	ClickHouse  DatabaseType = "clickhouse"
+	OceanBase   DatabaseType = "oceanbase"
 )
 
 // Config 数据库配置结构
