@@ -2,15 +2,55 @@ package main
 
 import (
 	"fmt"
+	"github.com/gzorm/gosqlx"
+	"github.com/gzorm/gosqlx/gen/doc"
 	"log"
 
 	"github.com/gzorm/gosqlx/gen/model"
 )
 
 func main() {
-	gen_MySql_POES()
+	//gen_MySql_POES()
+	gen_myql_doc()
 }
+func gen_myql_doc() {
+	// 创建文档生成配置
+	config := &doc.Config{
+		DBType:     gosqlx.MySQL,
+		Source:     "root:root@tcp(localhost:3306)/testdb?charset=utf8mb4&parseTime=True&loc=Local",
+		DBName:     "mydb",
+		OutputPath: "database_doc.docx",
+		Title:      "数据库设计文档",
+		Author:     "系统管理员",
+		Company:    "我的公司",
+	}
 
+	// 生成Word文档
+	err := doc.GenerateDBDoc(config)
+	if err != nil {
+		log.Fatalf("生成数据库文档失败: %v", err)
+	}
+
+	fmt.Println("数据库文档生成成功!")
+
+	// 如果需要生成Excel格式的文档
+	excelConfig := &doc.Config{
+		DBType:     gosqlx.MySQL,
+		Source:     "root:password@tcp(localhost:3306)/mydb?charset=utf8mb4&parseTime=True&loc=Local",
+		DBName:     "mydb",
+		OutputPath: "database_doc.xlsx",
+		Title:      "数据库设计文档",
+		Author:     "系统管理员",
+		Company:    "我的公司",
+	}
+
+	err = doc.GenerateExcelDoc(excelConfig)
+	if err != nil {
+		log.Fatalf("生成Excel数据库文档失败: %v", err)
+	}
+
+	fmt.Println("Excel数据库文档生成成功!")
+}
 func gen_MySql_POES() {
 	config := &model.Config{
 		DBType:       "mysql",
@@ -137,7 +177,6 @@ func gen_MariaDB_POES() {
 		log.Fatalf("生成模型失败: %v", err)
 	}
 }
-
 func gen_ClickHouse_POES() {
 	config := &model.Config{
 		DBType:       "clickhouse",
@@ -149,7 +188,6 @@ func gen_ClickHouse_POES() {
 		OutputDir:    "./gen/model", // 会自动创建 model/poes 目录
 		PackageName:  "poes",        // 生成的包名
 	}
-
 	if err := model.GenerateModels(config); err != nil {
 		log.Fatalf("生成模型失败: %v", err)
 	}
