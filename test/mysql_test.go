@@ -1222,7 +1222,7 @@ func TestMySQLAdapterQueryPage(t *testing.T) {
 	defer db.Close()
 
 	// 准备测试表
-	prepareTestTables(t, db)
+	//prepareTestTables(t, db)
 
 	// 插入测试数据
 	for i := 1; i <= 30; i++ {
@@ -1258,7 +1258,7 @@ func TestMySQLAdapterQueryPage(t *testing.T) {
 			var users []User
 
 			// 调用适配器的QueryPage方法
-			total, err := db.QueryPage(&users, tc.page, tc.pageSize, tc.filter)
+			total, err := db.QueryPage(&users, tc.page, tc.pageSize, "users", tc.filter)
 			if err != nil {
 				t.Fatalf("适配器分页查询失败: %v", err)
 			}
@@ -1362,7 +1362,7 @@ func TestMySQLAdapterQueryPageWithOrder(t *testing.T) {
 			var users []User
 
 			// 调用适配器的QueryPage方法，带排序选项
-			total, err := db.QueryPage(&users, tc.page, tc.pageSize, tc.filter, tc.opts...)
+			total, err := db.QueryPage(&users, tc.page, tc.pageSize, "users", tc.filter, tc.opts...)
 			if err != nil {
 				t.Fatalf("适配器分页查询(带排序)失败: %v", err)
 			}

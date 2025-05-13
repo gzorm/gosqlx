@@ -875,14 +875,14 @@ func (d *Database) QueryRows(out interface{}, sqlStr string, values ...interface
 // pageSize: 每页记录数
 // filter: 过滤条件（可以是SQL字符串或条件映射）
 // opts: 可选参数，第一个参数通常是数据库连接
-func (d *Database) QueryPage(out interface{}, page, pageSize int, filter interface{}, opts ...interface{}) (int64, error) {
+func (d *Database) QueryPage(out interface{}, page, pageSize int, tableName string, filter interface{}, opts ...interface{}) (int64, error) {
 	// 将数据库连接作为第一个可选参数传递给适配器
 	newOpts := make([]interface{}, 0, len(opts)+1)
 	newOpts = append(newOpts, d.db)
 	newOpts = append(newOpts, opts...)
 
 	// 根据数据库类型调用相应适配器的分页方法
-	return d.adapter.QueryPage(out, page, pageSize, filter, newOpts...)
+	return d.adapter.QueryPage(out, page, pageSize, tableName, filter, newOpts...)
 }
 
 // Count 计数查询

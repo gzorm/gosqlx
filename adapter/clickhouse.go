@@ -191,8 +191,7 @@ func (c *ClickHouse) MergeInto(db *gorm.DB, table string, columns []string, valu
 	return db.Exec(sqlBuilder.String(), flatValues...).Error
 }
 
-// QueryPage 实现分页查询
-func (c *ClickHouse) QueryPage(out interface{}, page, pageSize int, filter interface{}, opts ...interface{}) (int64, error) {
+func (c *ClickHouse) QueryPage(out interface{}, page, pageSize int, tableName string, filter interface{}, opts ...interface{}) (int64, error) {
 	// 计算偏移量
 	offset := (page - 1) * pageSize
 
@@ -206,8 +205,10 @@ func (c *ClickHouse) QueryPage(out interface{}, page, pageSize int, filter inter
 		return 0, fmt.Errorf("第一个参数必须是*gorm.DB类型")
 	}
 
+	// 使用提供的表名
+	query := db.Table(tableName)
+
 	// 假设filter是查询条件
-	query := db
 	if filter != nil {
 		query = query.Where(filter)
 	}

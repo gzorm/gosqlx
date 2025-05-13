@@ -283,13 +283,16 @@ func (s *SQLite) MergeInto(db *gorm.DB, table string, columns []string, values [
 }
 
 // QueryPage 分页查询
-func (s *SQLite) QueryPage(out interface{}, page, pageSize int, filter interface{}, opts ...interface{}) (int64, error) {
+func (s *SQLite) QueryPage(out interface{}, page, pageSize int, tableName string, filter interface{}, opts ...interface{}) (int64, error) {
 	// 参数验证
 	if page <= 0 {
 		page = 1
 	}
 	if pageSize <= 0 {
 		pageSize = 10
+	}
+	if tableName == "" {
+		return 0, fmt.Errorf("表名不能为空")
 	}
 
 	// 从 opts 中提取 db 和其他参数
@@ -325,20 +328,11 @@ func (s *SQLite) QueryPage(out interface{}, page, pageSize int, filter interface
 			values = append(values, v)
 		}
 
-		// 假设 opts[1] 是基础 SQL（如果提供）
-		baseSQL := "SELECT * FROM unknown_table"
-		if len(opts) > 1 {
-			if s, ok := opts[1].(string); ok {
-				baseSQL = s
-			}
-		}
+		// 使用提供的表名
+		baseSQL := fmt.Sprintf("SELECT * FROM %s", tableName)
 
 		if len(conditions) > 0 {
-			if strings.Contains(strings.ToUpper(baseSQL), " WHERE ") {
-				sqlStr = fmt.Sprintf("%s AND %s", baseSQL, strings.Join(conditions, " AND "))
-			} else {
-				sqlStr = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
-			}
+			sqlStr = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
 		} else {
 			sqlStr = baseSQL
 		}
@@ -346,12 +340,74 @@ func (s *SQLite) QueryPage(out interface{}, page, pageSize int, filter interface
 		return 0, fmt.Errorf("不支持的过滤条件类型")
 	}
 
+	// 检查 SQL 语句是否包含 SELECT 和 FROM 关键字
+	hasSelect := strings.Contains(strings.ToUpper(sqlStr), "SELECT ")
+	hasFrom := strings.Contains(strings.ToUpper(sqlStr), " FROM ")
+
+	// 如果不是完整的 SQL 查询语句，则将其视为条件表达式
+	if !hasSelect || !hasFrom {
+		// 构建完整的 SQL 查询语句
+		sqlStr = fmt.Sprintf("SELECT * FROM %s WHERE %s", tableName, sqlStr)
+	} else {
+		// 检查 SQL 语句是否包含 WHERE 子句
+		hasWhere := strings.Contains(strings.ToUpper(sqlStr), " WHERE ")
+
+		// 如果没有 WHERE 子句，但有条件需要添加
+		if !hasWhere {
+			// 查找 FROM 子句后面的位置
+			fromIndex := strings.Index(strings.ToUpper(sqlStr), " FROM ")
+			if fromIndex >= 0 {
+				// 查找可能的子句位置
+				clauseKeywords := []string{" ORDER BY ", " GROUP BY ", " HAVING ", " LIMIT "}
+				insertPos := len(sqlStr)
+
+				for _, keyword := range clauseKeywords {
+					pos := strings.Index(strings.ToUpper(sqlStr), keyword)
+					if pos >= 0 && pos < insertPos {
+						insertPos = pos
+					}
+				}
+
+				// 插入 WHERE 子句
+				sqlStr = sqlStr[:insertPos] + " WHERE 1=1" + sqlStr[insertPos:]
+			}
+		}
+	}
+
 	// 计算偏移量
 	offset := (page - 1) * pageSize
 
 	// 查询总记录数
 	var total int64
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s)", sqlStr)
+	var countSQL string
+
+	// 检查是否是简单查询（只有 SELECT ... FROM ... WHERE ...）
+	isSimpleQuery := true
+	complexKeywords := []string{" GROUP BY ", " HAVING ", " DISTINCT ", " UNION "}
+	for _, keyword := range complexKeywords {
+		if strings.Contains(strings.ToUpper(sqlStr), keyword) {
+			isSimpleQuery = false
+			break
+		}
+	}
+
+	if isSimpleQuery {
+		// 对于简单查询，直接从表中计数
+		// 提取 FROM 和 WHERE 部分
+		fromIndex := strings.Index(strings.ToUpper(sqlStr), " FROM ")
+		if fromIndex >= 0 {
+			// 获取 FROM 之后的部分
+			fromPart := sqlStr[fromIndex:]
+			countSQL = "SELECT COUNT(*)" + fromPart
+		} else {
+			// 如果无法解析，回退到子查询方式
+			countSQL = fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS count_table", sqlStr)
+		}
+	} else {
+		// 对于复杂查询，使用子查询
+		countSQL = fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS count_table", sqlStr)
+	}
+
 	err := db.Raw(countSQL, values...).Count(&total).Error
 	if err != nil {
 		return 0, fmt.Errorf("查询总记录数失败: %w", err)
