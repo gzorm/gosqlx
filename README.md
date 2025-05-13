@@ -1,36 +1,41 @@
-# GoSQLX - 高性能多数据库适配器与查询构建框架
+# GoSQLX - High-Performance Multi-Database Adapter and Query Builder Framework
 
-## 💖 支持项目
+[English](README.md) | [中文](README_zh.md)
 
-您的支持对我们意义重大！如果GoSQLX帮助您解决了问题，请考虑：
+## 💖 Support This Project
 
-- ⭐ 给项目一个星标
-- 🔄 分享给您的同事和朋友
-- 🐛 报告您发现的问题
-- 🔧 提交PR帮助改进项目
-- 📝 分享您使用GoSQLX的经验
+Your support means a lot to us! If GoSQLX has helped you solve problems, please consider:
 
-[![给项目加星](https://img.shields.io/github/stars/gzorm/gosqlx.svg?style=social)](https://github.com/gzorm/gosqlx)
-## 简介
-GoSQLX 是一个功能强大的 Go 语言数据库操作框架，提供了统一的接口来操作多种关系型数据库，包括 MySQL、PostgreSQL、Oracle、SQL Server、Tidb、Mongodb  和 SQLite。它基于 GORM 和标准库构建，同时提供了更高级的抽象和功能扩展。
+- ⭐ Giving the project a star
+- 🔄 Sharing it with your colleagues and friends
+- 🐛 Reporting issues you find
+- 🔧 Submitting PRs to help improve the project
+- 📝 Sharing your experience using GoSQLX
 
-## 特性
-- 多数据库适配 ：无缝支持 MySQL、PostgreSQL、Oracle、SQL Server、Tidb、Mongodb 和 SQLite 等主流数据库
-- 读写分离 ：内置读写分离支持，轻松实现数据库负载均衡
-- 灵活配置管理 ：支持多环境、多数据库配置，适应复杂的部署场景
-- 强大的查询构建器 ：链式 API 设计，简化 SQL 构建过程
-- 事务支持 ：完善的事务处理机制，包括只读事务
-- 连接池管理 ：智能连接池配置，优化数据库连接资源
-- 上下文感知 ：支持 context.Context，便于超时控制和请求追踪
-- 调试模式 ：内置 SQL 日志记录，方便开发调试
+[![Star this project](https://img.shields.io/github/stars/gzorm/gosqlx.svg?style=social)](https://github.com/gzorm/gosqlx)
 
-## 安装
-<pre class="command-line"><code>go get github.com/gzorm/gosqlx</code></pre>
+## Introduction
+GoSQLX is a powerful Go language database operation framework that provides a unified interface for operating multiple relational databases, including MySQL, PostgreSQL, Oracle, SQL Server, TiDB, MongoDB, and SQLite. It is built on GORM and the standard library, while providing higher-level abstractions and functional extensions.
 
-## 快速开始
-### 基本配置
-<pre class="command-line"><code>
+## Features
+- Multi-database support: Seamlessly supports mainstream databases like MySQL, PostgreSQL, Oracle, SQL Server, TiDB, MongoDB, and SQLite
+- Read-write separation: Built-in read-write separation support for easy database load balancing
+- Flexible configuration management: Supports multi-environment, multi-database configurations for complex deployment scenarios
+- Powerful query builder: Chain API design simplifies the SQL building process
+- Transaction support: Complete transaction processing mechanism, including read-only transactions
+- Connection pool management: Smart connection pool configuration optimizes database connection resources
+- Context awareness: Supports context.Context for timeout control and request tracking
+- Debug mode: Built-in SQL logging for easy development debugging
 
+## Installation
+``` bash
+     
+     go get github.com/gzorm/gosqlx
+
+```
+## Quick Start
+### Basic Configuration
+```go
 package main
 
 import (
@@ -38,7 +43,7 @@ import (
 )
 
 func main() {
-    // 创建配置映射
+    // Create configuration mapping
     configs := gosqlx.ConfigMap{
         "development": {
             "main": &gosqlx.Config{
@@ -53,37 +58,34 @@ func main() {
         },
     }
     
-    // 创建配置提供者
+    // Create configuration provider
     provider := gosqlx.NewConfigProvider(configs)
 
-    // 创建配置管理器
+    // Create configuration manager
     configManager := gosqlx.NewConfigManager(provider)
 
-    // 创建数据库管理器
-     manager := gosqlx.NewDatabaseManager(configManager)   
+    // Create database manager
+    manager := gosqlx.NewDatabaseManager(configManager)   
 
-    // 创建数据库上下文
-	dbCtx := &gosqlx.Context{
-		Nick: "main",
-		Mode: gosqlx.ModeReadWrite,
-	}
+    // Create database context
+    dbCtx := &gosqlx.Context{
+        Nick: "main",
+        Mode: gosqlx.ModeReadWrite,
+    }
     
-    // 获取数据库连接
+    // Get database connection
     db, err := manager.GetDatabase(dbCtx)
     if err != nil {
         panic(err)
     }
     
-    // 使用数据库连接
+    // Use database connection
     // ...
 }
-
-
-</code></pre>
-### 读写分离配置
-<pre class="command-line"><code>
-
-configs := gosqlx.ConfigMap{
+```
+## Read-Write Separation Configuration
+```go
+ configs := gosqlx.ConfigMap{
     "production": {
         "main": &gosqlx.Config{
             Type:        gosqlx.MySQL,
@@ -105,41 +107,41 @@ configs := gosqlx.ConfigMap{
         },
     },
 }
-</code></pre>
-### 基本查询操作
-<pre class="command-line"><code>
-
-// 执行查询
+```
+## Basic Query Operations
+```go
+// Execute query
 rows, err := db.Query("SELECT id, name FROM users WHERE age > ?", 18)
 if err != nil {
-    // 处理错误
+    // Handle error
 }
 defer rows.Close()
 
-// 遍历结果
+// Iterate through results
 for rows.Next() {
     var id int
     var name string
     if err := rows.Scan(&id, &name); err != nil {
-        // 处理错误
+        // Handle error
     }
     fmt.Printf("ID: %d, Name: %s\n", id, name)
-}</code></pre>
-### 使用查询构建器
-<pre class="command-line"><code>
+}
+```
+## Using Query Builder
+```go
 import "github.com/gzorm/gosqlx/query"
 
-// 创建查询构建器
+// Create query builder
 q := query.NewQuery(db.DB())
 
-// 查询单条记录
+// Query single record
 var user User
 err := q.Table("users").
     Select("id", "username", "email").
     Where("id = ?", 1).
     First(&user)
 
-// 查询多条记录
+// Query multiple records
 var users []User
 err := q.Table("users").
     Select("id", "username", "email").
@@ -148,131 +150,123 @@ err := q.Table("users").
     Limit(10).
     Offset(0).
     Get(&users)
-
-
-</code></pre>
-### 事务处理
-<pre class="command-line"><code>
-// 开始事务
+```
+## Transaction Handling
+```go
+// Start transaction
 tx, err := db.Begin()
 if err != nil {
-    // 处理错误
+    // Handle error
 }
 
-// 执行事务操作
+// Execute transaction operations
 err = tx.Exec("INSERT INTO users (username, email) VALUES (?, ?)", "newuser", "newuser@example.com")
 if err != nil {
     tx.Rollback()
-    // 处理错误
+    // Handle error
     return
 }
 
-// 提交事务
+// Commit transaction
 if err := tx.Commit(); err != nil {
-    // 处理错误
+    // Handle error
 }
-</code></pre>
-### 读写分离使用
-<pre class="command-line"><code>
-// 创建读写数据库上下文
+```
+## Read-Write Separation Usage
+```go
+// Create read-write database context
 rwCtx := &gosqlx.Context{
   Nick: "main",
   Mode: gosqlx.ModeReadWrite,
 }
 
-// 获取读写数据库连接
+// Get read-write database connection
 rwDB, err := manager.GetDatabase(rwCtx)
 if err != nil {
-  log.Fatalf("获取读写数据库失败: %v", err)
+  log.Fatalf("Failed to get read-write database: %v", err)
 }
 
-// 创建只读数据库上下文
+// Create read-only database context
 roCtx := &gosqlx.Context{
   Nick: "main_readonly",
   Mode: gosqlx.ModeReadOnly,
 }
 
-// 获取只读数据库连接
+// Get read-only database connection
 roDB, err := manager.GetDatabase(roCtx)
 if err != nil {
-  log.Fatalf("获取只读数据库失败: %v", err)
+  log.Fatalf("Failed to get read-only database: %v", err)
 }
 
-// 使用读写数据库进行写操作
+// Use read-write database for write operations
 err = rwDB.Exec("INSERT INTO users (username, email) VALUES (?, ?)", "queryuser", "query@example.com")
 if err != nil {
-   log.Fatalf("Query构建器写操作失败: %v", err)
+   log.Fatalf("Query builder write operation failed: %v", err)
 }
 
-// 执行读操作
+// Execute read operations
 var count int
 err = roDB.ScanRaw(&count, "SELECT COUNT(*) FROM users ")
 if err != nil {
-  log.Fatalf("执行读操作失败: %v", err)
+  log.Fatalf("Read operation failed: %v", err)
 }
-
-</code></pre>
-## 高级用法
-### 从文件加载配置
-<pre class="command-line"><code>
-
-// 创建文件配置加载器
+```
+## Advanced Usage
+### Loading Configuration from File
+```go
+// Create file configuration loader
 loader := gosqlx.NewFileConfigLoader("config/database.json")
 
-// 加载配置
+// Load configuration
 configs, err := loader.Load()
 if err != nil {
     panic(err)
 }
 
- 
-// 创建配置提供者
+// Create configuration provider
 provider := gosqlx.NewConfigProvider(configs)
-// 创建数据库管理器
+// Create configuration manager
 configManager := gosqlx.NewConfigManager(provider)
 
-// 创建数据库管理器
+// Create database manager
 manager := gosqlx.NewDatabaseManager(configManager)
-
-</code></pre>
-
-### 自定义适配器
-<pre class="command-line"><code>
-
-// 实现自定义适配器
+```
+## Custom Adapter
+```go
+// Implement custom adapter
 type MyCustomAdapter struct {
     // ...
 }
 
-// 实现适配器接口方法
+// Implement adapter interface methods
 func (a *MyCustomAdapter) Connect() (*gorm.DB, *sql.DB, error) {
     // ...
 }
 
-// 注册自定义适配器
+// Register custom adapter
 gosqlx.RegisterAdapter("mycustom", func(config *gosqlx.Config) gosqlx.Adapter {
     return &MyCustomAdapter{
         // ...
     }
 })
-
-</code></pre>
-## 支持的数据库
+```
+## Supported Databases
 - MySQL
 - PostgreSQL
 - Oracle
 - SQL Server
-- TIDB
-- Mongodb
+- TiDB
+- MongoDB
 - SQLite
-## 贡献指南
-欢迎贡献代码、报告问题或提出改进建议。
+## Contribution Guidelines
+We welcome contributions from the community! If you would like to contribute to GoSQLX, please follow these guidelines:
 
+- Fork the repository and create a new branch for your changes
+- Make your changes and ensure that they are well-tested
+- Submit a pull request with a clear description of your changes
  
-## 许可证
-本项目采用 Apache 2.0 许可证 - 详情请参阅 LICENSE 文件。
-
-## 联系方式
-- 项目维护者：gzorm
-- GitHub： https://github.com/gzorm
-
+## License
+This project is licensed under the Apache 2.0 License - see the LICENSE file for details.
+## Contact
+- Project Maintainer: gzorm
+- GitHub: https://github.com/gzorm
