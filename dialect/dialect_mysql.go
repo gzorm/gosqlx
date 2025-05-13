@@ -27,12 +27,14 @@ func (d *MySQLDialect) GetTablesSQL() string {
 
 // 获取表结构
 func (d *MySQLDialect) GetTableSchemaSQL(table string) string {
-	return fmt.Sprintf("SHOW FULL COLUMNS FROM %s", d.QuoteTable(table))
+	//return fmt.Sprintf("SHOW FULL COLUMNS FROM %s", d.QuoteTable(table))
+	return fmt.Sprintf("SHOW FULL COLUMNS FROM %s", table)
 }
 
 // 获取索引列表
 func (d *MySQLDialect) GetIndexesSQL(table string) string {
-	return fmt.Sprintf("SHOW INDEX FROM %s", d.QuoteTable(table))
+	//return fmt.Sprintf("SHOW INDEX FROM %s", d.QuoteTable(table))
+	return fmt.Sprintf("SHOW INDEX FROM %s", table)
 }
 
 // 获取外键列表

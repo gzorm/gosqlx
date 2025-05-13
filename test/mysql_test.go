@@ -3,6 +3,8 @@ package test
 import (
 	"context"
 	"fmt"
+	"github.com/gzorm/gosqlx/dialect"
+	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
 
@@ -125,7 +127,7 @@ func TestMySQLInsert(t *testing.T) {
 	defer db.Close()
 
 	// 准备测试表
-	//prepareTestTables(t, db)
+	prepareTestTables(t, db)
 
 	// 创建用户
 	user := &User{
@@ -1379,4 +1381,47 @@ func TestMySQLAdapterQueryPageWithOrder(t *testing.T) {
 				tc.name, len(users), total)
 		})
 	}
+}
+func TestQuery(t *testing.T) {
+	// 初始化数据库
+	db := initMySQLDB(t)
+	defer db.Close()
+
+	mysqlDialect := dialect.GetDialect("mysql")
+	assert.NotNil(t, mysqlDialect, "MySQL 方言不应为空")
+
+	// 2. 调用 GetTableSchemaSQL 方法
+	tableName := "users"
+	schemaSQL := mysqlDialect.GetTableSchemaSQL(tableName)
+
+	//rows, err := db.Query(schemaSQL)
+	//if err != nil {
+	//	t.Fatal(err)
+	//	return
+	//}
+	// 定义结构体来接收结果
+	var columns []struct {
+		Field      string      `db:"Field"`
+		Type       string      `db:"Type"`
+		Collation  string      `db:"Collation"`
+		Null       string      `db:"Null"`
+		Key        string      `db:"Key"`
+		Default    interface{} `db:"Default"`
+		Extra      string      `db:"Extra"`
+		Privileges string      `db:"Privileges"`
+		Comment    string      `db:"Comment"`
+	}
+
+	// 使用 ScanRaw 方法执行查询
+	err := db.ScanRaw(&columns, schemaSQL)
+	if err != nil {
+		t.Fatalf("执行表结构 SQL 失败: %v", err)
+	}
+
+	// 打印结果
+	for _, col := range columns {
+		t.Logf("字段: %s, 类型: %s, 可空: %s, 键: %s, 默认值: %v, 额外: %s, 注释: %s",
+			col.Field, col.Type, col.Null, col.Key, col.Default, col.Extra, col.Comment)
+	}
+
 }
