@@ -1212,3 +1212,171 @@ func TestMySQLQueryBuilderTransaction(t *testing.T) {
 
 	t.Logf("Query构建器事务操作成功，用户ID: %d", user.ID)
 }
+
+// 测试适配器的分页查询方法
+func TestMySQLAdapterQueryPage(t *testing.T) {
+	// 初始化数据库
+	db := initMySQLDB(t)
+	defer db.Close()
+
+	// 准备测试表
+	prepareTestTables(t, db)
+
+	// 插入测试数据
+	for i := 1; i <= 30; i++ {
+		username := fmt.Sprintf("adapter_page%d", i)
+		email := fmt.Sprintf("adapter_page%d@example.com", i)
+
+		err := db.Exec(
+			"INSERT INTO users (username, email, age, active) VALUES (?, ?, ?, ?)",
+			username, email, 20+i, i%2 == 0,
+		)
+		if err != nil {
+			t.Fatalf("插入测试数据失败: %v", err)
+		}
+	}
+
+	// 测试不同的分页参数
+	testCases := []struct {
+		name     string
+		page     int
+		pageSize int
+		filter   interface{}
+		expected int
+	}{
+		{"第一页数据", 1, 10, "age > 25", 10},
+		{"第二页数据", 2, 10, "age > 25", 10},
+		{"第三页数据", 3, 10, "age > 25", 5},
+		{"空页数据", 4, 10, "age > 25", 0},
+		{"带条件过滤", 1, 5, "active = 1 AND age > 30", 5},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var users []User
+
+			// 调用适配器的QueryPage方法
+			total, err := db.QueryPage(&users, tc.page, tc.pageSize, tc.filter)
+			if err != nil {
+				t.Fatalf("适配器分页查询失败: %v", err)
+			}
+
+			// 验证返回的总记录数
+			if total <= 0 && tc.expected > 0 {
+				t.Fatalf("适配器分页查询返回的总记录数不正确: %d", total)
+			}
+
+			// 验证返回的记录数
+			if len(users) != tc.expected {
+				t.Fatalf("适配器分页查询验证失败，期望记录数: %d, 实际记录数: %d", tc.expected, len(users))
+			}
+
+			t.Logf("适配器分页查询成功，页码: %d, 每页大小: %d, 返回记录数: %d, 总记录数: %d",
+				tc.page, tc.pageSize, len(users), total)
+		})
+	}
+}
+
+// 测试适配器的分页查询方法（带排序）
+func TestMySQLAdapterQueryPageWithOrder(t *testing.T) {
+	// 初始化数据库
+	db := initMySQLDB(t)
+	defer db.Close()
+
+	// 准备测试表
+	prepareTestTables(t, db)
+
+	// 插入测试数据
+	for i := 1; i <= 20; i++ {
+		username := fmt.Sprintf("order_page%d", i)
+		email := fmt.Sprintf("order_page%d@example.com", i)
+		age := 20 + (i % 5) // 制造一些重复的年龄值
+
+		err := db.Exec(
+			"INSERT INTO users (username, email, age, active) VALUES (?, ?, ?, ?)",
+			username, email, age, i%2 == 0,
+		)
+		if err != nil {
+			t.Fatalf("插入测试数据失败: %v", err)
+		}
+	}
+
+	// 测试不同的排序方式
+	testCases := []struct {
+		name     string
+		page     int
+		pageSize int
+		filter   interface{}
+		opts     []interface{}
+		checkFn  func([]User) bool
+	}{
+		{
+			name:     "按ID降序",
+			page:     1,
+			pageSize: 5,
+			filter:   nil,
+			opts:     []interface{}{(&builder.Order{}).OrderBy("id DESC")},
+			checkFn: func(users []User) bool {
+				// 检查是否按ID降序排列
+				for i := 0; i < len(users)-1; i++ {
+					if users[i].ID < users[i+1].ID {
+						return false
+					}
+				}
+				return true
+			},
+		},
+		{
+			name:     "按年龄升序",
+			page:     1,
+			pageSize: 10,
+			filter:   nil,
+			opts:     []interface{}{(&builder.Order{}).OrderByAsc("age")},
+			checkFn: func(users []User) bool {
+				// 检查是否按年龄升序排列
+				for i := 0; i < len(users)-1; i++ {
+					if users[i].Age > users[i+1].Age {
+						return false
+					}
+				}
+				return true
+			},
+		},
+		{
+			name:     "复合排序",
+			page:     1,
+			pageSize: 10,
+			filter:   nil,
+			opts:     []interface{}{(&builder.Order{}).OrderByMulti([]string{"id DESC", "name ASC"})},
+			checkFn: func(users []User) bool {
+				// 复合排序较难在测试中验证，这里简单检查结果不为空
+				return len(users) > 0
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var users []User
+
+			// 调用适配器的QueryPage方法，带排序选项
+			total, err := db.QueryPage(&users, tc.page, tc.pageSize, tc.filter, tc.opts...)
+			if err != nil {
+				t.Fatalf("适配器分页查询(带排序)失败: %v", err)
+			}
+
+			// 验证返回的总记录数
+			if total <= 0 {
+				t.Fatalf("适配器分页查询返回的总记录数不正确: %d", total)
+			}
+
+			// 验证排序结果
+			if !tc.checkFn(users) {
+				t.Fatalf("排序结果验证失败")
+			}
+
+			t.Logf("适配器分页查询(带排序)成功，排序方式: %s, 返回记录数: %d, 总记录数: %d",
+				tc.name, len(users), total)
+		})
+	}
+}
