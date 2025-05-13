@@ -496,6 +496,8 @@ var dialectMap = map[string]func() Dialect{
 	"sqlserver":  func() Dialect { return NewSQLServerDialect() },
 	"mssql":      func() Dialect { return NewSQLServerDialect() },
 	"oracle":     func() Dialect { return NewOracleDialect() },
+	"clickhouse": func() Dialect { return NewClickHouseDialect() },
+	"mariadb":    func() Dialect { return NewMariaDBDialect() },
 }
 
 // 注册自定义方言
