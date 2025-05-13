@@ -222,7 +222,7 @@ func TestOracleBatchInsert(t *testing.T) {
 			username, email, 20+i, i%2,
 		)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("批量插入用户失败: %v", err)
 		}
 	}
@@ -401,7 +401,7 @@ func TestOracleTransaction(t *testing.T) {
 			"txuser1", "tx1@example.com", 25, 1,
 		)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("事务中插入用户失败: %v", err)
 		}
 
@@ -409,7 +409,7 @@ func TestOracleTransaction(t *testing.T) {
 		var userID int64
 		err = tx.QueryRow("SELECT ID FROM USERS WHERE USERNAME = :1", "txuser1").Scan(&userID)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("事务中获取用户ID失败: %v", err)
 		}
 
@@ -419,7 +419,7 @@ func TestOracleTransaction(t *testing.T) {
 			userID, "事务文章", "这是一篇事务测试文章",
 		)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("事务中插入文章失败: %v", err)
 		}
 
@@ -457,7 +457,7 @@ func TestOracleTransaction(t *testing.T) {
 			"txuser2", "tx2@example.com", 30, 1,
 		)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("事务中插入用户失败: %v", err)
 		}
 
@@ -465,7 +465,7 @@ func TestOracleTransaction(t *testing.T) {
 		var userID int64
 		err = tx.QueryRow("SELECT ID FROM USERS WHERE USERNAME = :1", "txuser2").Scan(&userID)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("事务中获取用户ID失败: %v", err)
 		}
 
@@ -688,7 +688,7 @@ func TestOracleQueryBuilderTransaction(t *testing.T) {
 		"txbuilder", "txbuilder@example.com", 30, 1,
 	)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("事务中插入用户失败: %v", err)
 	}
 
@@ -696,7 +696,7 @@ func TestOracleQueryBuilderTransaction(t *testing.T) {
 	var userID int64
 	err = tx.QueryRow("SELECT ID FROM USERS WHERE USERNAME = :1", "txbuilder").Scan(&userID)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("事务中获取用户ID失败: %v", err)
 	}
 
@@ -706,7 +706,7 @@ func TestOracleQueryBuilderTransaction(t *testing.T) {
 		userID, "事务构建器文章", "这是一篇使用事务构建器创建的文章",
 	)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("事务中插入文章失败: %v", err)
 	}
 

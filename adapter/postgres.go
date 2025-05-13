@@ -163,7 +163,7 @@ func (p *Postgres) BatchInsert(db *gorm.DB, table string, columns []string, valu
 	}
 
 	// 构建完整SQL
-	sql := fmt.Sprintf(
+	sqlStr := fmt.Sprintf(
 		"INSERT INTO %s (%s) VALUES %s",
 		table,
 		strings.Join(columns, ", "),
@@ -171,7 +171,7 @@ func (p *Postgres) BatchInsert(db *gorm.DB, table string, columns []string, valu
 	)
 
 	// 执行SQL
-	return db.Exec(sql, flatValues...).Error
+	return db.Exec(sqlStr, flatValues...).Error
 }
 
 // BatchInsertOrUpdate 批量插入或更新
@@ -210,7 +210,7 @@ func (p *Postgres) BatchInsertOrUpdate(db *gorm.DB, table string, columns []stri
 	}
 
 	// 构建完整SQL
-	sql := fmt.Sprintf(
+	sqlStr := fmt.Sprintf(
 		"INSERT INTO %s (%s) VALUES %s%s",
 		table,
 		strings.Join(columns, ", "),
@@ -219,19 +219,19 @@ func (p *Postgres) BatchInsertOrUpdate(db *gorm.DB, table string, columns []stri
 	)
 
 	// 执行SQL
-	return db.Exec(sql, flatValues...).Error
+	return db.Exec(sqlStr, flatValues...).Error
 }
 
 // CreateSequence 创建序列
 func (p *Postgres) CreateSequence(db *gorm.DB, name string, startWith int, incrementBy int) error {
-	sql := fmt.Sprintf("CREATE SEQUENCE IF NOT EXISTS %s START WITH %d INCREMENT BY %d", name, startWith, incrementBy)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("CREATE SEQUENCE IF NOT EXISTS %s START WITH %d INCREMENT BY %d", name, startWith, incrementBy)
+	return db.Exec(sqlStr).Error
 }
 
 // DropSequence 删除序列
 func (p *Postgres) DropSequence(db *gorm.DB, name string) error {
-	sql := fmt.Sprintf("DROP SEQUENCE IF EXISTS %s", name)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("DROP SEQUENCE IF EXISTS %s", name)
+	return db.Exec(sqlStr).Error
 }
 
 // NextVal 获取序列的下一个值
@@ -508,18 +508,18 @@ func (p *Postgres) GetUsers(db *gorm.DB) ([]map[string]interface{}, error) {
 
 // CreateUser 创建用户
 func (p *Postgres) CreateUser(db *gorm.DB, username, password string, superuser, createdb bool) error {
-	sql := fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s'", username, password)
+	sqlStr := fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s'", username, password)
 	if superuser {
-		sql += " SUPERUSER"
+		sqlStr += " SUPERUSER"
 	} else {
-		sql += " NOSUPERUSER"
+		sqlStr += " NOSUPERUSER"
 	}
 	if createdb {
-		sql += " CREATEDB"
+		sqlStr += " CREATEDB"
 	} else {
-		sql += " NOCREATEDB"
+		sqlStr += " NOCREATEDB"
 	}
-	return db.Exec(sql).Error
+	return db.Exec(sqlStr).Error
 }
 
 // DropUser 删除用户
@@ -529,14 +529,14 @@ func (p *Postgres) DropUser(db *gorm.DB, username string) error {
 
 // GrantPrivileges 授予权限
 func (p *Postgres) GrantPrivileges(db *gorm.DB, privileges string, objects string, username string) error {
-	sql := fmt.Sprintf("GRANT %s ON %s TO %s", privileges, objects, username)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("GRANT %s ON %s TO %s", privileges, objects, username)
+	return db.Exec(sqlStr).Error
 }
 
 // RevokePrivileges 撤销权限
 func (p *Postgres) RevokePrivileges(db *gorm.DB, privileges string, objects string, username string) error {
-	sql := fmt.Sprintf("REVOKE %s ON %s FROM %s", privileges, objects, username)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("REVOKE %s ON %s FROM %s", privileges, objects, username)
+	return db.Exec(sqlStr).Error
 }
 
 // CreateExtension 创建扩展
@@ -575,11 +575,11 @@ func (p *Postgres) CreateSchema(db *gorm.DB, name string) error {
 
 // DropSchema 删除模式
 func (p *Postgres) DropSchema(db *gorm.DB, name string, cascade bool) error {
-	sql := fmt.Sprintf("DROP SCHEMA IF EXISTS %s", name)
+	sqlStr := fmt.Sprintf("DROP SCHEMA IF EXISTS %s", name)
 	if cascade {
-		sql += " CASCADE"
+		sqlStr += " CASCADE"
 	}
-	return db.Exec(sql).Error
+	return db.Exec(sqlStr).Error
 }
 
 // ListSchemas 列出所有模式
@@ -630,13 +630,13 @@ func (p *Postgres) QueryPage(out interface{}, page, pageSize int, filter interfa
 	}
 
 	// 处理 filter 参数
-	var sql string
+	var sqlStr string
 	var values []interface{}
 
 	switch f := filter.(type) {
 	case string:
 		// 如果 filter 是 SQL 字符串
-		sql = f
+		sqlStr = f
 		// 提取剩余的参数作为 values
 		if len(opts) > 1 {
 			for _, v := range opts[1:] {
@@ -662,12 +662,12 @@ func (p *Postgres) QueryPage(out interface{}, page, pageSize int, filter interfa
 
 		if len(conditions) > 0 {
 			if strings.Contains(strings.ToUpper(baseSQL), " WHERE ") {
-				sql = fmt.Sprintf("%s AND %s", baseSQL, strings.Join(conditions, " AND "))
+				sqlStr = fmt.Sprintf("%s AND %s", baseSQL, strings.Join(conditions, " AND "))
 			} else {
-				sql = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
+				sqlStr = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
 			}
 		} else {
-			sql = baseSQL
+			sqlStr = baseSQL
 		}
 	default:
 		return 0, fmt.Errorf("不支持的过滤条件类型")
@@ -678,7 +678,7 @@ func (p *Postgres) QueryPage(out interface{}, page, pageSize int, filter interfa
 
 	// 查询总记录数
 	var total int64
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS count_table", sql)
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS count_table", sqlStr)
 	err := db.Raw(countSQL, values...).Count(&total).Error
 	if err != nil {
 		return 0, fmt.Errorf("查询总记录数失败: %w", err)
@@ -691,7 +691,7 @@ func (p *Postgres) QueryPage(out interface{}, page, pageSize int, filter interfa
 
 	// 查询分页数据
 	// PostgreSQL 使用 $1, $2, ... 作为参数占位符，但 GORM 会自动处理
-	pageSQL := fmt.Sprintf("%s LIMIT %d OFFSET %d", sql, pageSize, offset)
+	pageSQL := fmt.Sprintf("%s LIMIT %d OFFSET %d", sqlStr, pageSize, offset)
 	err = db.Raw(pageSQL, values...).Scan(out).Error
 	if err != nil {
 		return 0, fmt.Errorf("查询分页数据失败: %w", err)

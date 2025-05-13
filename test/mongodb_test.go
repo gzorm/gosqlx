@@ -132,7 +132,7 @@ func TestMongoInsert(t *testing.T) {
 		t.Fatalf("获取插入ID失败: %v", err)
 	}
 
-	t.Logf("插入用户成功，ID: %s", lastID)
+	t.Logf("插入用户成功，ID: %v", lastID)
 
 	// 验证插入结果
 	var count int
@@ -235,7 +235,7 @@ func TestMongoQueryRow(t *testing.T) {
 
 	// 验证查询结果
 	if user.ID != userID || user.Username != "queryuser" || user.Email != "query@example.com" || user.Age != 30 || !user.Active {
-		t.Fatalf("查询结果验证失败，期望用户ID: %s, 实际用户ID: %s", userID, user.ID)
+		t.Fatalf("查询结果验证失败，期望用户ID: %v, 实际用户ID: %v", userID, user.ID)
 	}
 
 	t.Logf("查询单条记录成功: %+v", user)

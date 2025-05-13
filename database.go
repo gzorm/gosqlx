@@ -15,6 +15,7 @@ import (
 
 	"github.com/gzorm/gosqlx/adapter"
 
+	"gorm.io/driver/clickhouse"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlserver"
@@ -155,7 +156,7 @@ func NewDatabase(ctx *Context, config *Config) (*Database, error) {
 	switch config.Type {
 	case MySQL:
 		dialector = mysql.Open(config.Source)
-	case PostgreSQL:
+	case PostgresSQL:
 		dialector = postgres.Open(config.Source)
 	case SQLServer:
 		dialector = sqlserver.Open(config.Source)
@@ -166,6 +167,11 @@ func NewDatabase(ctx *Context, config *Config) (*Database, error) {
 	case TiDB:
 		// TiDB 使用 MySQL 驱动，但需要特殊处理
 		dialector = mysql.Open(config.Source)
+	case MariaDB:
+		// MariaDB 使用 MySQL 驱动
+		dialector = mysql.Open(config.Source)
+	case ClickHouse:
+		dialector = clickhouse.Open(config.Source)
 	default:
 		return nil, fmt.Errorf("不支持的数据库类型: %s", config.Type)
 	}
@@ -192,7 +198,7 @@ func NewDatabase(ctx *Context, config *Config) (*Database, error) {
 	switch config.Type {
 	case MySQL:
 		adapterInstance = adapter.NewMySQL(config.Source)
-	case PostgreSQL:
+	case PostgresSQL:
 		adapterInstance = adapter.NewPostgres(config.Source)
 	case SQLite:
 		adapterInstance = adapter.NewSQLite(config.Source)
@@ -202,6 +208,10 @@ func NewDatabase(ctx *Context, config *Config) (*Database, error) {
 		adapterInstance = adapter.NewOracle(config.Source)
 	case TiDB:
 		adapterInstance = adapter.NewTiDB(config.Source)
+	case ClickHouse:
+		adapterInstance = adapter.NewClickHouse(config.Source)
+	case MariaDB:
+		adapterInstance = adapter.NewMariaDB(config.Source)
 	default:
 		return nil, fmt.Errorf("不支持的数据库类型: %s", config.Type)
 	}
@@ -220,19 +230,25 @@ func NewDatabase(ctx *Context, config *Config) (*Database, error) {
 
 // DSN 返回数据库连接字符串
 func (d *Database) DSN() string {
-	switch adapter := d.adapter.(type) {
+	switch adapterInstance := d.adapter.(type) {
 	case *adapter.MySQL:
-		return adapter.DSN
+		return adapterInstance.DSN
 	case *adapter.Postgres:
-		return adapter.DSN
+		return adapterInstance.DSN
 	case *adapter.SQLite:
-		return adapter.DSN
+		return adapterInstance.DSN
 	case *adapter.SQLServer:
-		return adapter.DSN
+		return adapterInstance.DSN
 	case *adapter.Oracle:
-		return adapter.DSN
+		return adapterInstance.DSN
 	case *adapter.MongoDB:
-		return adapter.URI
+		return adapterInstance.URI
+	case *adapter.TiDB:
+		return adapterInstance.DSN
+	case *adapter.ClickHouse:
+		return adapterInstance.DSN
+	case *adapter.MariaDB:
+		return adapterInstance.DSN
 	default:
 		return ""
 	}
@@ -315,7 +331,7 @@ func (d *Database) Lock(out interface{}, ids ...interface{}) error {
 		lockOption = "WITH (UPDLOCK, ROWLOCK)"
 	case Oracle:
 		lockOption = "FOR UPDATE NOWAIT"
-	case PostgreSQL:
+	case PostgresSQL:
 		lockOption = "FOR UPDATE"
 	}
 
@@ -359,7 +375,7 @@ func (d *Database) LockOrder(out interface{}, order, where string, values ...int
 		lockOption = "WITH (UPDLOCK, ROWLOCK)"
 	case Oracle:
 		lockOption = "FOR UPDATE NOWAIT"
-	case PostgreSQL:
+	case PostgresSQL:
 		lockOption = "FOR UPDATE"
 	case TiDB:
 		lockOption = "FOR UPDATE" // 目前与MySQL相同，但将来可能有特殊选项
@@ -389,7 +405,7 @@ func (d *Database) LockShare(out interface{}, ids ...interface{}) error {
 		lockOption = "WITH (HOLDLOCK, ROWLOCK)"
 	case Oracle:
 		lockOption = "FOR UPDATE NOWAIT"
-	case PostgreSQL:
+	case PostgresSQL:
 		lockOption = "FOR SHARE"
 	case TiDB:
 		lockOption = "FOR SHARE" // 目前与MySQL相同，但将来可能有特殊选项
@@ -428,7 +444,7 @@ func (d *Database) LockMulti(out interface{}, where string, values ...interface{
 		lockOption = "WITH (UPDLOCK, ROWLOCK)"
 	case Oracle:
 		lockOption = "FOR UPDATE NOWAIT"
-	case PostgreSQL:
+	case PostgresSQL:
 		lockOption = "FOR UPDATE"
 	case TiDB:
 		lockOption = "FOR UPDATE" // 目前与MySQL相同，但将来可能有特殊选项
@@ -454,8 +470,8 @@ func (d *Database) BatchInsert(table string, columns []string, values [][]interf
 	switch d.dbType {
 	case MySQL:
 		// MySQL 批量插入
-		var sql strings.Builder
-		sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+		var sqlBuilder strings.Builder
+		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
 
 		var placeholders []string
 		var flatValues []interface{}
@@ -468,14 +484,14 @@ func (d *Database) BatchInsert(table string, columns []string, values [][]interf
 			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
 			flatValues = append(flatValues, row...)
 		}
-		sql.WriteString(strings.Join(placeholders, ", "))
+		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
 
-		return d.db.Exec(sql.String(), flatValues...).Error
+		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
 
 	case TiDB:
 		// TiDB 与 MySQL 兼容，使用相同的批量插入语法
-		var sql strings.Builder
-		sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+		var sqlBuilder strings.Builder
+		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
 
 		var placeholders []string
 		var flatValues []interface{}
@@ -490,24 +506,24 @@ func (d *Database) BatchInsert(table string, columns []string, values [][]interf
 			flatValues = append(flatValues, row...)
 		}
 
-		sql.WriteString(strings.Join(placeholders, ", "))
+		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
 
-		return d.db.Exec(sql.String(), flatValues...).Error
+		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
 
 	case SQLServer:
 		// 使用 SQLServer 适配器的批量插入
-		adapter := &adapter.SQLServer{}
-		return adapter.BatchInsert(d.db, table, columns, values)
+		adapterInstance := &adapter.SQLServer{}
+		return adapterInstance.BatchInsert(d.db, table, columns, values)
 
 	case Oracle:
 		// 使用 Oracle 适配器的批量插入
-		adapter := &adapter.Oracle{}
-		return adapter.BatchInsert(d.db, table, columns, values)
+		adapterInstance := &adapter.Oracle{}
+		return adapterInstance.BatchInsert(d.db, table, columns, values)
 
-	case PostgreSQL:
+	case PostgresSQL:
 		// PostgreSQL 批量插入
-		var sql strings.Builder
-		sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+		var sqlBuilder strings.Builder
+		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
 
 		var placeholders []string
 		var flatValues []interface{}
@@ -524,14 +540,14 @@ func (d *Database) BatchInsert(table string, columns []string, values [][]interf
 			flatValues = append(flatValues, row...)
 		}
 
-		sql.WriteString(strings.Join(placeholders, ", "))
+		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
 
-		return d.db.Exec(sql.String(), flatValues...).Error
+		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
 
 	case SQLite:
 		// SQLite 批量插入
-		var sql strings.Builder
-		sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+		var sqlBuilder strings.Builder
+		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
 
 		var placeholders []string
 		var flatValues []interface{}
@@ -546,9 +562,9 @@ func (d *Database) BatchInsert(table string, columns []string, values [][]interf
 			flatValues = append(flatValues, row...)
 		}
 
-		sql.WriteString(strings.Join(placeholders, ", "))
+		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
 
-		return d.db.Exec(sql.String(), flatValues...).Error
+		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
 
 	case MongoDB:
 		// MongoDB 批量插入
@@ -583,8 +599,8 @@ func (d *Database) MergeInto(table string, columns []string, values [][]interfac
 	switch d.dbType {
 	case MySQL:
 		// MySQL UPSERT (INSERT ... ON DUPLICATE KEY UPDATE)
-		var sql strings.Builder
-		sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+		var sqlBuilder strings.Builder
+		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
 
 		var placeholders []string
 		var flatValues []interface{}
@@ -598,23 +614,23 @@ func (d *Database) MergeInto(table string, columns []string, values [][]interfac
 			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
 		}
 
-		sql.WriteString(strings.Join(placeholders, ", "))
+		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
 
 		if len(updateColumns) > 0 {
-			sql.WriteString(" ON DUPLICATE KEY UPDATE ")
+			sqlBuilder.WriteString(" ON DUPLICATE KEY UPDATE ")
 			var updates []string
 			for _, col := range updateColumns {
 				updates = append(updates, fmt.Sprintf("%s = VALUES(%s)", col, col))
 			}
-			sql.WriteString(strings.Join(updates, ", "))
+			sqlBuilder.WriteString(strings.Join(updates, ", "))
 		}
 
-		return d.db.Exec(sql.String(), flatValues...).Error
+		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
 
 	case TiDB:
 		// TiDB 与 MySQL 兼容，使用相同的 UPSERT 语法
-		var sql strings.Builder
-		sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+		var sqlBuilder strings.Builder
+		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
 
 		var placeholders []string
 		var flatValues []interface{}
@@ -628,33 +644,33 @@ func (d *Database) MergeInto(table string, columns []string, values [][]interfac
 			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
 		}
 
-		sql.WriteString(strings.Join(placeholders, ", "))
+		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
 
 		if len(updateColumns) > 0 {
-			sql.WriteString(" ON DUPLICATE KEY UPDATE ")
+			sqlBuilder.WriteString(" ON DUPLICATE KEY UPDATE ")
 			var updates []string
 			for _, col := range updateColumns {
 				updates = append(updates, fmt.Sprintf("%s = VALUES(%s)", col, col))
 			}
-			sql.WriteString(strings.Join(updates, ", "))
+			sqlBuilder.WriteString(strings.Join(updates, ", "))
 		}
 
-		return d.db.Exec(sql.String(), flatValues...).Error
+		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
 
 	case SQLServer:
 		// 使用 SQLServer 适配器的 MERGE INTO
-		adapter := &adapter.SQLServer{}
-		return adapter.MergeInto(d.db, table, columns, values, keyColumns, updateColumns)
+		adapterInstance := &adapter.SQLServer{}
+		return adapterInstance.MergeInto(d.db, table, columns, values, keyColumns, updateColumns)
 
 	case Oracle:
 		// 使用 Oracle 适配器的 MERGE INTO
-		adapter := &adapter.Oracle{}
-		return adapter.MergeInto(d.db, table, columns, values, keyColumns, updateColumns)
+		adapterInstance := &adapter.Oracle{}
+		return adapterInstance.MergeInto(d.db, table, columns, values, keyColumns, updateColumns)
 
-	case PostgreSQL:
+	case PostgresSQL:
 		// PostgreSQL UPSERT (INSERT ... ON CONFLICT ... DO UPDATE)
-		var sql strings.Builder
-		sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+		var sqlBuilder strings.Builder
+		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
 
 		var placeholders []string
 		var flatValues []interface{}
@@ -670,23 +686,23 @@ func (d *Database) MergeInto(table string, columns []string, values [][]interfac
 			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
 		}
 
-		sql.WriteString(strings.Join(placeholders, ", "))
+		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
 
 		if len(updateColumns) > 0 && len(keyColumns) > 0 {
-			sql.WriteString(fmt.Sprintf(" ON CONFLICT (%s) DO UPDATE SET ", strings.Join(keyColumns, ", ")))
+			sqlBuilder.WriteString(fmt.Sprintf(" ON CONFLICT (%s) DO UPDATE SET ", strings.Join(keyColumns, ", ")))
 			var updates []string
 			for _, col := range updateColumns {
 				updates = append(updates, fmt.Sprintf("%s = EXCLUDED.%s", col, col))
 			}
-			sql.WriteString(strings.Join(updates, ", "))
+			sqlBuilder.WriteString(strings.Join(updates, ", "))
 		}
 
-		return d.db.Exec(sql.String(), flatValues...).Error
+		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
 
 	case SQLite:
 		// SQLite 3.24.0 及以上版本支持 UPSERT
-		var sql strings.Builder
-		sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+		var sqlBuilder strings.Builder
+		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
 
 		var placeholders []string
 		var flatValues []interface{}
@@ -700,18 +716,18 @@ func (d *Database) MergeInto(table string, columns []string, values [][]interfac
 			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
 		}
 
-		sql.WriteString(strings.Join(placeholders, ", "))
+		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
 
 		if len(updateColumns) > 0 && len(keyColumns) > 0 {
-			sql.WriteString(fmt.Sprintf(" ON CONFLICT (%s) DO UPDATE SET ", strings.Join(keyColumns, ", ")))
+			sqlBuilder.WriteString(fmt.Sprintf(" ON CONFLICT (%s) DO UPDATE SET ", strings.Join(keyColumns, ", ")))
 			var updates []string
 			for _, col := range updateColumns {
 				updates = append(updates, fmt.Sprintf("%s = excluded.%s", col, col))
 			}
-			sql.WriteString(strings.Join(updates, ", "))
+			sqlBuilder.WriteString(strings.Join(updates, ", "))
 		}
 
-		return d.db.Exec(sql.String(), flatValues...).Error
+		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
 
 	case MongoDB:
 		// MongoDB 使用 upsert 操作
@@ -849,8 +865,8 @@ func (d *Database) QueryRow(query string, args ...interface{}) *sql.Row {
 }
 
 // QueryRows 查询多条记录
-func (d *Database) QueryRows(out interface{}, sql string, values ...interface{}) error {
-	return d.Raw(sql, values...).Scan(out).Error
+func (d *Database) QueryRows(out interface{}, sqlStr string, values ...interface{}) error {
+	return d.Raw(sqlStr, values...).Scan(out).Error
 }
 
 // QueryPage 分页查询
@@ -1004,7 +1020,7 @@ func (m *DatabaseManager) CloseAll() {
 	defer m.mutex.Unlock()
 
 	for _, db := range m.databases {
-		db.Close()
+		_ = db.Close()
 	}
 
 	m.databases = make(map[string]*Database)

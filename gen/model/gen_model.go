@@ -28,6 +28,10 @@ func GenerateModels(config *Config) error {
 		generator, err = NewSQLiteGenerator(config)
 	case "mongodb":
 		generator, err = NewMongoDBGenerator(config)
+	case "mariadb":
+		generator, err = NewMariaDBGenerator(config)
+	case "clickhouse":
+		generator, err = NewClickHouseGenerator(config)
 	default:
 		return fmt.Errorf("不支持的数据库类型: %s", config.DBType)
 	}

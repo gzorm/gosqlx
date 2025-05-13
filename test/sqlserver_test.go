@@ -125,7 +125,7 @@ func TestSQLServerCRUD(t *testing.T) {
 	// 测试插入
 	result, err := db.ExecWithResult(
 		"INSERT INTO Users (Username, Email, Age, Active) VALUES (@p1, @p2, @p3, @p4)",
-		"testuser", "test@example.com", 25, true,
+		"testUser", "test@example.com", 25, true,
 	)
 	if err != nil {
 		t.Fatalf("插入用户失败: %v", err)
@@ -223,7 +223,7 @@ func TestSQLServerBatchInsert(t *testing.T) {
 			username, email, 20+i, i%2 == 0,
 		)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("批量插入用户失败: %v", err)
 		}
 	}
@@ -320,7 +320,7 @@ func TestSQLServerJoin(t *testing.T) {
 	// 插入用户数据
 	err := db.Exec(
 		"INSERT INTO Users (Username, Email, Age, Active) VALUES (@p1, @p2, @p3, @p4)",
-		"joinuser", "join@example.com", 30, true,
+		"joinUser", "join@example.com", 30, true,
 	)
 	if err != nil {
 		t.Fatalf("插入用户数据失败: %v", err)
@@ -397,10 +397,10 @@ func TestSQLServerTransaction(t *testing.T) {
 		// 插入用户
 		err = tx.Exec(
 			"INSERT INTO Users (Username, Email, Age, Active) VALUES (@p1, @p2, @p3, @p4)",
-			"txuser1", "tx1@example.com", 25, true,
+			"txUser1", "tx1@example.com", 25, true,
 		)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("事务中插入用户失败: %v", err)
 		}
 
@@ -408,7 +408,7 @@ func TestSQLServerTransaction(t *testing.T) {
 		var userID int64
 		err = tx.QueryRow("SELECT SCOPE_IDENTITY()").Scan(&userID)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("事务中获取用户ID失败: %v", err)
 		}
 
@@ -418,7 +418,7 @@ func TestSQLServerTransaction(t *testing.T) {
 			userID, "事务文章", "这是一篇事务测试文章",
 		)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("事务中插入文章失败: %v", err)
 		}
 
@@ -453,10 +453,10 @@ func TestSQLServerTransaction(t *testing.T) {
 		// 插入用户
 		err = tx.Exec(
 			"INSERT INTO Users (Username, Email, Age, Active) VALUES (@p1, @p2, @p3, @p4)",
-			"txuser2", "tx2@example.com", 30, true,
+			"txUser2", "tx2@example.com", 30, true,
 		)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("事务中插入用户失败: %v", err)
 		}
 
@@ -464,7 +464,7 @@ func TestSQLServerTransaction(t *testing.T) {
 		var userID int64
 		err = tx.QueryRow("SELECT SCOPE_IDENTITY()").Scan(&userID)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("事务中获取用户ID失败: %v", err)
 		}
 
@@ -476,7 +476,7 @@ func TestSQLServerTransaction(t *testing.T) {
 
 		// 验证事务回滚结果
 		var count int
-		err = db.QueryRow("SELECT COUNT(*) FROM Users WHERE Username = @p1", "txuser2").Scan(&count)
+		err = db.QueryRow("SELECT COUNT(*) FROM Users WHERE Username = @p1", "txUser2").Scan(&count)
 		if err != nil {
 			t.Fatalf("验证事务回滚失败: %v", err)
 		}
@@ -555,7 +555,7 @@ func TestSQLServerQueryBuilderJoin(t *testing.T) {
 	// 插入用户数据
 	err := db.Exec(
 		"INSERT INTO Users (Username, Email, Age, Active) VALUES (@p1, @p2, @p3, @p4)",
-		"joinuser", "join@example.com", 30, true,
+		"joinUser", "join@example.com", 30, true,
 	)
 	if err != nil {
 		t.Fatalf("插入用户数据失败: %v", err)
@@ -773,7 +773,7 @@ func TestSQLServerOutputClause(t *testing.T) {
 		SET Age = Age + 10
 		OUTPUT DELETED.ID, DELETED.Age AS OldAge, INSERTED.Age AS NewAge
 		WHERE Username = @p1
-	`, "outputuser")
+	`, "outPutUser")
 	if err != nil {
 		t.Fatalf("OUTPUT子句更新失败: %v", err)
 	}
@@ -812,7 +812,7 @@ func TestSQLServerOutputClause(t *testing.T) {
 		DELETE FROM Users
 		OUTPUT DELETED.ID, DELETED.Username, DELETED.Email
 		WHERE Username = @p1
-	`, "outputuser")
+	`, "outPutUser")
 	if err != nil {
 		t.Fatalf("OUTPUT子句删除失败: %v", err)
 	}
@@ -1224,10 +1224,10 @@ func TestSQLServerQueryBuilderTransaction(t *testing.T) {
 	// 插入用户
 	err = tx.Exec(
 		"INSERT INTO Users (Username, Email, Age, Active) VALUES (@p1, @p2, @p3, @p4)",
-		"txbuilder", "txbuilder@example.com", 30, true,
+		"txBuilder", "txbuilder@example.com", 30, true,
 	)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("事务中插入用户失败: %v", err)
 	}
 
@@ -1235,7 +1235,7 @@ func TestSQLServerQueryBuilderTransaction(t *testing.T) {
 	var userID int64
 	err = tx.QueryRow("SELECT SCOPE_IDENTITY()").Scan(&userID)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("事务中获取用户ID失败: %v", err)
 	}
 
@@ -1245,7 +1245,7 @@ func TestSQLServerQueryBuilderTransaction(t *testing.T) {
 		userID, "事务构建器文章", "这是一篇使用事务构建器创建的文章",
 	)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("事务中插入文章失败: %v", err)
 	}
 

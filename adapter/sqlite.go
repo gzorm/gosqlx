@@ -148,7 +148,7 @@ func (s *SQLite) BatchInsert(db *gorm.DB, table string, columns []string, values
 	}
 
 	// 构建完整SQL
-	sql := fmt.Sprintf(
+	sqlStr := fmt.Sprintf(
 		"INSERT INTO %s (%s) VALUES %s",
 		table,
 		strings.Join(columns, ", "),
@@ -156,7 +156,7 @@ func (s *SQLite) BatchInsert(db *gorm.DB, table string, columns []string, values
 	)
 
 	// 执行SQL
-	return db.Exec(sql, flatValues...).Error
+	return db.Exec(sqlStr, flatValues...).Error
 }
 
 // BatchInsertOrReplace 批量插入或替换（SQLite的REPLACE INTO功能）
@@ -180,7 +180,7 @@ func (s *SQLite) BatchInsertOrReplace(db *gorm.DB, table string, columns []strin
 	}
 
 	// 构建完整SQL
-	sql := fmt.Sprintf(
+	sqlStr := fmt.Sprintf(
 		"REPLACE INTO %s (%s) VALUES %s",
 		table,
 		strings.Join(columns, ", "),
@@ -188,7 +188,7 @@ func (s *SQLite) BatchInsertOrReplace(db *gorm.DB, table string, columns []strin
 	)
 
 	// 执行SQL
-	return db.Exec(sql, flatValues...).Error
+	return db.Exec(sqlStr, flatValues...).Error
 }
 
 // LockTable 锁定表
@@ -269,7 +269,7 @@ func (s *SQLite) MergeInto(db *gorm.DB, table string, columns []string, values [
 	}
 
 	// 构建完整SQL
-	sql := fmt.Sprintf(
+	sqlStr := fmt.Sprintf(
 		"INSERT INTO %s (%s) VALUES %s ON CONFLICT(%s) DO UPDATE SET %s",
 		table,
 		strings.Join(columns, ", "),
@@ -279,7 +279,7 @@ func (s *SQLite) MergeInto(db *gorm.DB, table string, columns []string, values [
 	)
 
 	// 执行SQL
-	return db.Exec(sql, flatValues...).Error
+	return db.Exec(sqlStr, flatValues...).Error
 }
 
 // QueryPage 分页查询
@@ -303,13 +303,13 @@ func (s *SQLite) QueryPage(out interface{}, page, pageSize int, filter interface
 	}
 
 	// 处理 filter 参数
-	var sql string
+	var sqlStr string
 	var values []interface{}
 
 	switch f := filter.(type) {
 	case string:
 		// 如果 filter 是 SQL 字符串
-		sql = f
+		sqlStr = f
 		// 提取剩余的参数作为 values
 		if len(opts) > 1 {
 			for _, v := range opts[1:] {
@@ -335,12 +335,12 @@ func (s *SQLite) QueryPage(out interface{}, page, pageSize int, filter interface
 
 		if len(conditions) > 0 {
 			if strings.Contains(strings.ToUpper(baseSQL), " WHERE ") {
-				sql = fmt.Sprintf("%s AND %s", baseSQL, strings.Join(conditions, " AND "))
+				sqlStr = fmt.Sprintf("%s AND %s", baseSQL, strings.Join(conditions, " AND "))
 			} else {
-				sql = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
+				sqlStr = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
 			}
 		} else {
-			sql = baseSQL
+			sqlStr = baseSQL
 		}
 	default:
 		return 0, fmt.Errorf("不支持的过滤条件类型")
@@ -351,7 +351,7 @@ func (s *SQLite) QueryPage(out interface{}, page, pageSize int, filter interface
 
 	// 查询总记录数
 	var total int64
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s)", sql)
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s)", sqlStr)
 	err := db.Raw(countSQL, values...).Count(&total).Error
 	if err != nil {
 		return 0, fmt.Errorf("查询总记录数失败: %w", err)
@@ -363,7 +363,7 @@ func (s *SQLite) QueryPage(out interface{}, page, pageSize int, filter interface
 	}
 
 	// 查询分页数据
-	pageSQL := fmt.Sprintf("%s LIMIT %d OFFSET %d", sql, pageSize, offset)
+	pageSQL := fmt.Sprintf("%s LIMIT %d OFFSET %d", sqlStr, pageSize, offset)
 	err = db.Raw(pageSQL, values...).Scan(out).Error
 	if err != nil {
 		return 0, fmt.Errorf("查询分页数据失败: %w", err)

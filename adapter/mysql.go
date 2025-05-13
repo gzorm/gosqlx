@@ -172,7 +172,7 @@ func (m *MySQL) BatchInsert(db *gorm.DB, table string, columns []string, values 
 	}
 
 	// 构建完整SQL
-	sql := fmt.Sprintf(
+	sqlStr := fmt.Sprintf(
 		"INSERT INTO %s (%s) VALUES %s",
 		table,
 		strings.Join(columns, ","),
@@ -180,7 +180,7 @@ func (m *MySQL) BatchInsert(db *gorm.DB, table string, columns []string, values 
 	)
 
 	// 执行SQL
-	return db.Exec(sql, flatValues...).Error
+	return db.Exec(sqlStr, flatValues...).Error
 }
 
 // BatchInsertOrUpdate 批量插入或更新
@@ -208,7 +208,7 @@ func (m *MySQL) BatchInsertOrUpdate(db *gorm.DB, table string, columns []string,
 	}
 
 	// 构建完整SQL
-	sql := fmt.Sprintf(
+	sqlStr := fmt.Sprintf(
 		"INSERT INTO %s (%s) VALUES %s ON DUPLICATE KEY UPDATE %s",
 		table,
 		strings.Join(columns, ","),
@@ -217,7 +217,7 @@ func (m *MySQL) BatchInsertOrUpdate(db *gorm.DB, table string, columns []string,
 	)
 
 	// 执行SQL
-	return db.Exec(sql, flatValues...).Error
+	return db.Exec(sqlStr, flatValues...).Error
 }
 
 // MergeInto 合并插入（UPSERT）- MySQL实现
@@ -227,8 +227,8 @@ func (m *MySQL) MergeInto(db *gorm.DB, table string, columns []string, values []
 	}
 
 	// MySQL UPSERT (INSERT ... ON DUPLICATE KEY UPDATE)
-	var sql strings.Builder
-	sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+	var sqlBuilder strings.Builder
+	sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
 
 	var placeholders []string
 	var flatValues []interface{}
@@ -242,18 +242,18 @@ func (m *MySQL) MergeInto(db *gorm.DB, table string, columns []string, values []
 		placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
 	}
 
-	sql.WriteString(strings.Join(placeholders, ", "))
+	sqlBuilder.WriteString(strings.Join(placeholders, ", "))
 
 	if len(updateColumns) > 0 {
-		sql.WriteString(" ON DUPLICATE KEY UPDATE ")
+		sqlBuilder.WriteString(" ON DUPLICATE KEY UPDATE ")
 		var updates []string
 		for _, col := range updateColumns {
 			updates = append(updates, fmt.Sprintf("%s = VALUES(%s)", col, col))
 		}
-		sql.WriteString(strings.Join(updates, ", "))
+		sqlBuilder.WriteString(strings.Join(updates, ", "))
 	}
 
-	return db.Exec(sql.String(), flatValues...).Error
+	return db.Exec(sqlBuilder.String(), flatValues...).Error
 }
 
 // CreateDatabase 创建数据库
@@ -265,14 +265,14 @@ func (m *MySQL) CreateDatabase(db *gorm.DB, name string, charset string, collati
 		collation = "utf8mb4_general_ci"
 	}
 
-	sql := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET %s COLLATE %s", name, charset, collation)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET %s COLLATE %s", name, charset, collation)
+	return db.Exec(sqlStr).Error
 }
 
 // DropDatabase 删除数据库
 func (m *MySQL) DropDatabase(db *gorm.DB, name string) error {
-	sql := fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", name)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", name)
+	return db.Exec(sqlStr).Error
 }
 
 // ShowDatabases 显示所有数据库
@@ -440,26 +440,26 @@ func (m *MySQL) GetUsers(db *gorm.DB) ([]map[string]interface{}, error) {
 
 // CreateUser 创建用户
 func (m *MySQL) CreateUser(db *gorm.DB, username, password, host string) error {
-	sql := fmt.Sprintf("CREATE USER '%s'@'%s' IDENTIFIED BY '%s'", username, host, password)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("CREATE USER '%s'@'%s' IDENTIFIED BY '%s'", username, host, password)
+	return db.Exec(sqlStr).Error
 }
 
 // DropUser 删除用户
 func (m *MySQL) DropUser(db *gorm.DB, username, host string) error {
-	sql := fmt.Sprintf("DROP USER IF EXISTS '%s'@'%s'", username, host)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("DROP USER IF EXISTS '%s'@'%s'", username, host)
+	return db.Exec(sqlStr).Error
 }
 
 // GrantPrivileges 授予权限
 func (m *MySQL) GrantPrivileges(db *gorm.DB, username, host, database, table, privileges string) error {
-	sql := fmt.Sprintf("GRANT %s ON %s.%s TO '%s'@'%s'", privileges, database, table, username, host)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("GRANT %s ON %s.%s TO '%s'@'%s'", privileges, database, table, username, host)
+	return db.Exec(sqlStr).Error
 }
 
 // RevokePrivileges 撤销权限
 func (m *MySQL) RevokePrivileges(db *gorm.DB, username, host, database, table, privileges string) error {
-	sql := fmt.Sprintf("REVOKE %s ON %s.%s FROM '%s'@'%s'", privileges, database, table, username, host)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("REVOKE %s ON %s.%s FROM '%s'@'%s'", privileges, database, table, username, host)
+	return db.Exec(sqlStr).Error
 }
 
 // FlushPrivileges 刷新权限
@@ -488,13 +488,13 @@ func (m *MySQL) QueryPage(out interface{}, page, pageSize int, filter interface{
 	}
 
 	// 处理 filter 参数
-	var sql string
+	var sqlStr string
 	var values []interface{}
 
 	switch f := filter.(type) {
 	case string:
 		// 如果 filter 是 SQL 字符串
-		sql = f
+		sqlStr = f
 		// 提取剩余的参数作为 values
 		if len(opts) > 1 {
 			for _, v := range opts[1:] {
@@ -514,7 +514,7 @@ func (m *MySQL) QueryPage(out interface{}, page, pageSize int, filter interface{
 
 	// 查询总记录数
 	var total int64
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS count_table", sql)
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS count_table", sqlStr)
 	err := db.Raw(countSQL, values...).Count(&total).Error
 	if err != nil {
 		return 0, fmt.Errorf("查询总记录数失败: %w", err)
@@ -526,7 +526,7 @@ func (m *MySQL) QueryPage(out interface{}, page, pageSize int, filter interface{
 	}
 
 	// 查询分页数据
-	pageSQL := fmt.Sprintf("%s LIMIT %d OFFSET %d", sql, pageSize, offset)
+	pageSQL := fmt.Sprintf("%s LIMIT %d OFFSET %d", sqlStr, pageSize, offset)
 	err = db.Raw(pageSQL, values...).Scan(out).Error
 	if err != nil {
 		return 0, fmt.Errorf("查询分页数据失败: %w", err)

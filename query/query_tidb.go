@@ -75,7 +75,7 @@ func (q *Query) ReadFromReplica() *Query {
 }
 
 // ReadFromStorage 从指定存储引擎读取
-// 示例: ReadFromStorage("tiflash", "t1", "t2")
+// 示例: ReadFromStorage("tiFlash", "t1", "t2")
 func (q *Query) ReadFromStorage(engine string, tables ...string) *Query {
 	if engine != "" && len(tables) > 0 {
 		hint := fmt.Sprintf("/*+ READ_FROM_STORAGE(%s, %s) */",

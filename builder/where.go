@@ -318,7 +318,10 @@ func (w *Where) WhereNotExistsIf(condition bool, subquery string, args ...interf
 }
 
 // WhereRaw 添加原始SQL条件
-// 示例: WhereRaw("DATE_FORMAT(created_at, '%Y-%m-%d') = ?", "2023-01-01")
+// 注意: 使用特定数据库函数时请确保兼容性
+// MySQL示例: WhereRaw("DATE_FORMAT(created_at, '%Y-%m-%d') = ?", "2023-01-01")
+// PostgresSQL示例: WhereRaw("TO_CHAR(created_at, 'YYYY-MM-DD') = ?", "2023-01-01")
+// SQLite示例: WhereRaw("strftime('%Y-%m-%d', created_at) = ?", "2023-01-01")
 func (w *Where) WhereRaw(sql string, args ...interface{}) *Where {
 	return w.Where(sql, args...)
 }
@@ -453,4 +456,26 @@ func (w *Where) Build() (string, []interface{}) {
 		return "", nil
 	}
 	return strings.Join(w.wheres, " AND "), w.values
+}
+
+// DateFormat 添加 MySQL 特定的日期格式化条件
+// 示例: DateFormat(w, "created_at", "%Y-%m-%d", "2023-01-01")
+func DateFormat(w *Where, field string, format string, value interface{}) *Where {
+	if field == "" || format == "" {
+		return w
+	}
+
+	query := fmt.Sprintf("DATE_FORMAT(%s, '%s') = ?", field, format)
+	return w.Where(query, value)
+}
+
+// ToChar 添加 PostgresSQL 特定的日期格式化条件
+// 示例: ToChar(w, "created_at", "YYYY-MM-DD", "2023-01-01")
+func ToChar(w *Where, field string, format string, value interface{}) *Where {
+	if field == "" || format == "" {
+		return w
+	}
+
+	query := fmt.Sprintf("TO_CHAR(%s, '%s') = ?", field, format)
+	return w.Where(query, value)
 }

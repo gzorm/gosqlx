@@ -12,62 +12,15 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-// TableInfo 表信息
-type TableInfo struct {
-	TableName    string       // 表名
-	TableComment string       // 表注释
-	Columns      []ColumnInfo // 列信息
-	PrimaryKeys  []string     // 主键
-	Indexes      []IndexInfo  // 索引
-	ModelName    string       // 模型名称（驼峰命名）
-}
-
-// ColumnInfo 列信息
-type ColumnInfo struct {
-	ColumnName    string // 列名
-	DataType      string // 数据类型
-	ColumnType    string // 列类型（包含长度等信息）
-	IsNullable    string // 是否可为空
-	ColumnKey     string // 键类型（PRI/UNI/MUL）
-	ColumnComment string // 列注释
-	Extra         string // 额外信息（如auto_increment）
-
-	// 生成Go结构体时使用
-	FieldName string // 字段名（驼峰命名）
-	GoType    string // Go类型
-	JsonTag   string // JSON标签
-	GormTag   string // GORM标签
-}
-
-// IndexInfo 索引信息
-type IndexInfo struct {
-	IndexName   string   // 索引名称
-	IndexType   string   // 索引类型（BTREE/FULLTEXT等）
-	IsUnique    bool     // 是否唯一索引
-	ColumnNames []string // 索引列名
-}
-
-// Config 生成配置
-type Config struct {
-	DBType       string // 数据库类型（mysql/postgresql等）
-	Host         string // 主机地址
-	Port         int    // 端口
-	Username     string // 用户名
-	Password     string // 密码
-	DatabaseName string // 数据库名
-	OutputDir    string // 输出目录
-	PackageName  string // 包名
-}
-
-// MySQLGenerator MySQL表结构生成器
-type MySQLGenerator struct {
+// MariaDBGenerator MariaDB表结构生成器
+type MariaDBGenerator struct {
 	Config *Config
 	DB     *sql.DB
 }
 
-// NewMySQLGenerator 创建MySQL表结构生成器
-func NewMySQLGenerator(config *Config) (*MySQLGenerator, error) {
-	if config.DBType != "mysql" {
+// NewMariaDBGenerator 创建MariaDB表结构生成器
+func NewMariaDBGenerator(config *Config) (*MariaDBGenerator, error) {
+	if config.DBType != "mariadb" {
 		return nil, fmt.Errorf("不支持的数据库类型: %s", config.DBType)
 	}
 
@@ -81,18 +34,18 @@ func NewMySQLGenerator(config *Config) (*MySQLGenerator, error) {
 
 	// 测试连接
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("测试数据库连接失败: %v", err)
 	}
 
-	return &MySQLGenerator{
+	return &MariaDBGenerator{
 		Config: config,
 		DB:     db,
 	}, nil
 }
 
 // Close 关闭数据库连接
-func (g *MySQLGenerator) Close() error {
+func (g *MariaDBGenerator) Close() error {
 	if g.DB != nil {
 		return g.DB.Close()
 	}
@@ -100,11 +53,15 @@ func (g *MySQLGenerator) Close() error {
 }
 
 // Generate 生成所有表的模型
-func (g *MySQLGenerator) Generate() error {
+func (g *MariaDBGenerator) Generate() error {
 	// 获取所有表名
 	tables, err := g.GetAllTables()
 	if err != nil {
 		return err
+	}
+
+	if len(tables) == 0 {
+		return fmt.Errorf("数据库 %s 中没有找到表", g.Config.DatabaseName)
 	}
 
 	// 确保输出目录存在
@@ -123,44 +80,24 @@ func (g *MySQLGenerator) Generate() error {
 		tableInfos = append(tableInfos, tableInfo)
 	}
 
-	// 生成单个模型文件
-	if err := g.GenerateModelFile(tableInfos, outputDir); err != nil {
-		return err
+	// 根据配置选择生成单个文件还是多个文件
+	if g.Config.SingleFile {
+		// 生成单个模型文件
+		if err := g.GenerateModelFile(tableInfos, outputDir); err != nil {
+			return err
+		}
+	} else {
+		// 生成多个模型文件
+		if err := g.GenerateModelFiles(tableInfos, outputDir); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-// func (g *MySQLGenerator) Generate() error {
-// 	// 获取所有表名
-// 	tables, err := g.GetAllTables()
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	// 确保输出目录存在
-// 	if err := os.MkdirAll(g.Config.OutputDir, 0755); err != nil {
-// 		return fmt.Errorf("创建输出目录失败: %v", err)
-// 	}
-
-// 	// 为每个表生成模型
-// 	for _, tableName := range tables {
-// 		tableInfo, err := g.GetTableInfo(tableName)
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 		// 生成模型文件
-// 		if err := g.GenerateModelFile(tableInfo); err != nil {
-// 			return err
-// 		}
-// 	}
-
-// 	return nil
-// }
-
 // GetAllTables 获取所有表名
-func (g *MySQLGenerator) GetAllTables() ([]string, error) {
+func (g *MariaDBGenerator) GetAllTables() ([]string, error) {
 	query := "SHOW TABLES"
 	rows, err := g.DB.Query(query)
 	if err != nil {
@@ -177,11 +114,15 @@ func (g *MySQLGenerator) GetAllTables() ([]string, error) {
 		tables = append(tables, tableName)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历表名时发生错误: %v", err)
+	}
+
 	return tables, nil
 }
 
 // GetTableInfo 获取表信息
-func (g *MySQLGenerator) GetTableInfo(tableName string) (*TableInfo, error) {
+func (g *MariaDBGenerator) GetTableInfo(tableName string) (*TableInfo, error) {
 	// 获取表注释
 	var tableComment string
 	query := `
@@ -191,7 +132,7 @@ func (g *MySQLGenerator) GetTableInfo(tableName string) (*TableInfo, error) {
 	`
 	err := g.DB.QueryRow(query, g.Config.DatabaseName, tableName).Scan(&tableComment)
 	if err != nil {
-		return nil, fmt.Errorf("获取表注释失败: %v", err)
+		return nil, fmt.Errorf("获取表 %s 注释失败: %v", tableName, err)
 	}
 
 	// 获取列信息
@@ -226,7 +167,7 @@ func (g *MySQLGenerator) GetTableInfo(tableName string) (*TableInfo, error) {
 }
 
 // GetColumnInfo 获取列信息
-func (g *MySQLGenerator) GetColumnInfo(tableName string) ([]ColumnInfo, error) {
+func (g *MariaDBGenerator) GetColumnInfo(tableName string) ([]ColumnInfo, error) {
 	query := `
 		SELECT 
 			column_name, data_type, column_type, 
@@ -238,7 +179,7 @@ func (g *MySQLGenerator) GetColumnInfo(tableName string) ([]ColumnInfo, error) {
 
 	rows, err := g.DB.Query(query, g.Config.DatabaseName, tableName)
 	if err != nil {
-		return nil, fmt.Errorf("查询列信息失败: %v", err)
+		return nil, fmt.Errorf("查询表 %s 列信息失败: %v", tableName, err)
 	}
 	defer rows.Close()
 
@@ -254,7 +195,7 @@ func (g *MySQLGenerator) GetColumnInfo(tableName string) ([]ColumnInfo, error) {
 
 		// 设置Go相关字段
 		col.FieldName = g.ToCamelCase(col.ColumnName)
-		col.GoType = g.MapMySQLTypeToGo(col.DataType, col.IsNullable == "YES")
+		col.GoType = g.MapMariaDBTypeToGo(col.DataType, col.IsNullable == "YES")
 		col.JsonTag = col.ColumnName
 
 		// 生成GORM标签
@@ -296,32 +237,15 @@ func (g *MySQLGenerator) GetColumnInfo(tableName string) ([]ColumnInfo, error) {
 		columns = append(columns, col)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历列信息时发生错误: %v", err)
+	}
+
 	return columns, nil
 }
 
-// GetGormDataType 获取GORM数据类型
-func (g *MySQLGenerator) GetGormDataType(dataType string, columnType string) string {
-	// 从columnType中提取类型信息，如varchar(255)
-	return columnType
-}
-
-// ExtractDefaultValue 从Extra字段中提取默认值
-func (g *MySQLGenerator) ExtractDefaultValue(extra string) string {
-	if !strings.Contains(strings.ToLower(extra), "default") {
-		return ""
-	}
-
-	parts := strings.Split(extra, "DEFAULT")
-	if len(parts) < 2 {
-		return ""
-	}
-
-	defaultValue := strings.TrimSpace(parts[1])
-	return defaultValue
-}
-
 // GetPrimaryKeys 获取主键
-func (g *MySQLGenerator) GetPrimaryKeys(tableName string) ([]string, error) {
+func (g *MariaDBGenerator) GetPrimaryKeys(tableName string) ([]string, error) {
 	query := `
 		SELECT column_name
 		FROM information_schema.key_column_usage
@@ -331,7 +255,7 @@ func (g *MySQLGenerator) GetPrimaryKeys(tableName string) ([]string, error) {
 
 	rows, err := g.DB.Query(query, g.Config.DatabaseName, tableName)
 	if err != nil {
-		return nil, fmt.Errorf("查询主键失败: %v", err)
+		return nil, fmt.Errorf("查询表 %s 主键失败: %v", tableName, err)
 	}
 	defer rows.Close()
 
@@ -344,11 +268,15 @@ func (g *MySQLGenerator) GetPrimaryKeys(tableName string) ([]string, error) {
 		primaryKeys = append(primaryKeys, columnName)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历主键时发生错误: %v", err)
+	}
+
 	return primaryKeys, nil
 }
 
 // GetIndexes 获取索引
-func (g *MySQLGenerator) GetIndexes(tableName string) ([]IndexInfo, error) {
+func (g *MariaDBGenerator) GetIndexes(tableName string) ([]IndexInfo, error) {
 	query := `
 		SELECT 
 			index_name, non_unique, index_type, column_name
@@ -359,7 +287,7 @@ func (g *MySQLGenerator) GetIndexes(tableName string) ([]IndexInfo, error) {
 
 	rows, err := g.DB.Query(query, g.Config.DatabaseName, tableName)
 	if err != nil {
-		return nil, fmt.Errorf("查询索引失败: %v", err)
+		return nil, fmt.Errorf("查询表 %s 索引失败: %v", tableName, err)
 	}
 	defer rows.Close()
 
@@ -391,6 +319,10 @@ func (g *MySQLGenerator) GetIndexes(tableName string) ([]IndexInfo, error) {
 		indexMap[indexName].ColumnNames = append(indexMap[indexName].ColumnNames, columnName)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历索引时发生错误: %v", err)
+	}
+
 	// 转换为切片
 	var indexes []IndexInfo
 	for _, idx := range indexMap {
@@ -400,9 +332,89 @@ func (g *MySQLGenerator) GetIndexes(tableName string) ([]IndexInfo, error) {
 	return indexes, nil
 }
 
-// MapMySQLTypeToGo 将MySQL类型映射到Go类型
-func (g *MySQLGenerator) MapMySQLTypeToGo(mysqlType string, isNullable bool) string {
-	switch strings.ToLower(mysqlType) {
+// GenerateModelFile 生成模型文件
+func (g *MariaDBGenerator) GenerateModelFile(tableInfos []*TableInfo, outputDir string) error {
+	// 模板定义
+	tmpl := `// 代码由 gosqlx 自动生成，请勿手动修改
+// 生成时间: {{.GenerateTime}}
+package {{.PackageName}}
+
+import (
+    "time"    
+    {{if .NeedJsonImport}}"encoding/json"{{end}}
+)
+
+{{range .TableInfos}}
+// {{.ModelName}} {{.TableComment}}
+type {{.ModelName}} struct {
+{{- range .Columns}}
+    {{.FieldName}} {{.GoType}} ` + "`json:\"{{.JsonTag}}\" gorm:\"{{.GormTag}}\"`" + ` // {{.ColumnComment}}
+{{- end}}
+}
+
+// TableName 表名
+func (m *{{.ModelName}}) TableName() string {
+    return "{{.TableName}}"
+}
+
+{{end}}
+`
+
+	// 检查是否需要导入json包
+	needJsonImport := false
+	for _, tableInfo := range tableInfos {
+		for _, col := range tableInfo.Columns {
+			if col.GoType == "json.RawMessage" {
+				needJsonImport = true
+				break
+			}
+		}
+		if needJsonImport {
+			break
+		}
+	}
+
+	// 准备模板数据
+	data := struct {
+		PackageName    string
+		TableInfos     []*TableInfo
+		GenerateTime   string
+		NeedJsonImport bool
+	}{
+		PackageName:    g.Config.PackageName,
+		TableInfos:     tableInfos,
+		GenerateTime:   time.Now().Format("2006-01-02 15:04:05"),
+		NeedJsonImport: needJsonImport,
+	}
+
+	// 解析模板
+	t, err := template.New("model").Parse(tmpl)
+	if err != nil {
+		return fmt.Errorf("解析模板失败: %v", err)
+	}
+
+	// 生成文件名
+	filePath := filepath.Join(outputDir, "poes.go")
+
+	// 创建文件
+	file, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("创建文件失败: %v", err)
+	}
+	defer file.Close()
+
+	// 执行模板
+	if err := t.Execute(file, data); err != nil {
+		return fmt.Errorf("执行模板失败: %v", err)
+	}
+
+	fmt.Printf("生成模型文件: %s\n", filePath)
+	return nil
+}
+
+// MapMariaDBTypeToGo 将MariaDB类型映射到Go类型
+func (g *MariaDBGenerator) MapMariaDBTypeToGo(mariadbType string, isNullable bool) string {
+	switch strings.ToLower(mariadbType) {
 	case "tinyint", "smallint", "mediumint", "int", "integer":
 		if isNullable {
 			return "*int"
@@ -445,31 +457,68 @@ func (g *MySQLGenerator) MapMySQLTypeToGo(mysqlType string, isNullable bool) str
 	}
 }
 
+// GetGormDataType 获取GORM数据类型
+func (g *MariaDBGenerator) GetGormDataType(dataType string, columnType string) string {
+	// 对于某些类型，需要保留完整的列类型信息
+	switch strings.ToLower(dataType) {
+	case "int", "tinyint", "smallint", "mediumint", "bigint":
+		return columnType
+	case "decimal", "numeric", "float", "double":
+		return columnType
+	case "varchar", "char":
+		return columnType
+	default:
+		return dataType
+	}
+}
+
+// ExtractDefaultValue 提取默认值
+func (g *MariaDBGenerator) ExtractDefaultValue(extra string) string {
+	// 查找默认值
+	if strings.Contains(strings.ToLower(extra), "default") {
+		parts := strings.Split(extra, "DEFAULT")
+		if len(parts) > 1 {
+			defaultValue := strings.TrimSpace(parts[1])
+			return defaultValue
+		}
+	}
+	return ""
+}
+
 // ToCamelCase 转换为驼峰命名
-func (g *MySQLGenerator) ToCamelCase(s string) string {
+func (g *MariaDBGenerator) ToCamelCase(s string) string {
 	// 处理下划线分隔的命名
 	parts := strings.Split(s, "_")
 	for i := range parts {
-		if len(parts[i]) > 0 {
-			parts[i] = strings.ToUpper(parts[i][:1]) + parts[i][1:]
+		// 检查Config中是否有FirstLetterUpper字段
+		// 如果没有，默认首字母大写
+		firstLetterUpper := true
+		if i == 0 && g.Config != nil {
+			firstLetterUpper = g.Config.FirstLetterUpper
+
+		}
+
+		if i > 0 || firstLetterUpper {
+			if len(parts[i]) > 0 {
+				parts[i] = strings.ToUpper(parts[i][:1]) + parts[i][1:]
+			}
 		}
 	}
 	return strings.Join(parts, "")
 }
 
-// GenerateModelFile 生成模型文件
-func (g *MySQLGenerator) GenerateModelFile(tableInfos []*TableInfo, outputDir string) error {
-	// 模板定义
+// GenerateModelFiles 生成单个模型文件
+func (g *MariaDBGenerator) GenerateModelFiles(tableInfos []*TableInfo, outputDir string) error {
 	// 模板定义
 	tmpl := `// 代码由 gosqlx 自动生成，请勿手动修改
 // 生成时间: {{.GenerateTime}}
 package {{.PackageName}}
 
 import (
-    "time"    
+    "time"
+    {{if .NeedJsonImport}}"encoding/json"{{end}}
 )
 
-{{range .TableInfos}}
 // {{.ModelName}} {{.TableComment}}
 type {{.ModelName}} struct {
 {{- range .Columns}}
@@ -481,20 +530,7 @@ type {{.ModelName}} struct {
 func (m *{{.ModelName}}) TableName() string {
     return "{{.TableName}}"
 }
-
-{{end}}
 `
-
-	// 准备模板数据
-	data := struct {
-		PackageName  string
-		TableInfos   []*TableInfo
-		GenerateTime string
-	}{
-		PackageName:  g.Config.PackageName,
-		TableInfos:   tableInfos,
-		GenerateTime: time.Now().Format("2006-01-02 15:04:05"),
-	}
 
 	// 解析模板
 	t, err := template.New("model").Parse(tmpl)
@@ -502,83 +538,55 @@ func (m *{{.ModelName}}) TableName() string {
 		return fmt.Errorf("解析模板失败: %v", err)
 	}
 
-	// 生成文件名
-	filePath := filepath.Join(outputDir, "poes.go")
+	// 为每个表生成单独的模型文件
+	for _, tableInfo := range tableInfos {
+		// 检查是否需要导入json包
+		needJsonImport := false
+		for _, col := range tableInfo.Columns {
+			if col.GoType == "json.RawMessage" {
+				needJsonImport = true
+				break
+			}
+		}
 
-	// 创建文件
-	file, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("创建文件失败: %v", err)
+		// 准备模板数据
+		data := struct {
+			PackageName    string
+			ModelName      string
+			TableName      string
+			TableComment   string
+			Columns        []ColumnInfo
+			GenerateTime   string
+			NeedJsonImport bool
+		}{
+			PackageName:    g.Config.PackageName,
+			ModelName:      tableInfo.ModelName,
+			TableName:      tableInfo.TableName,
+			TableComment:   tableInfo.TableComment,
+			Columns:        tableInfo.Columns,
+			GenerateTime:   time.Now().Format("2006-01-02 15:04:05"),
+			NeedJsonImport: needJsonImport,
+		}
+
+		// 生成文件名
+		fileName := fmt.Sprintf("%s.go", strings.ToLower(tableInfo.ModelName))
+		filePath := filepath.Join(outputDir, fileName)
+
+		// 创建文件
+		file, err := os.Create(filePath)
+		if err != nil {
+			return fmt.Errorf("创建文件失败: %v", err)
+		}
+
+		// 执行模板
+		if err := t.Execute(file, data); err != nil {
+			_ = file.Close()
+			return fmt.Errorf("执行模板失败: %v", err)
+		}
+
+		_ = file.Close()
+		fmt.Printf("生成模型文件: %s\n", filePath)
 	}
-	defer file.Close()
 
-	// 执行模板
-	if err := t.Execute(file, data); err != nil {
-		return fmt.Errorf("执行模板失败: %v", err)
-	}
-
-	fmt.Printf("生成模型文件: %s\n", filePath)
 	return nil
 }
-
-// // GenerateModelFile 生成模型文件
-// func (g *MySQLGenerator) GenerateModelFile(tableInfo *TableInfo) error {
-// 	// 模板定义
-// 	tmpl := `// 代码由 gosqlx 自动生成，请勿手动修改
-// // 生成时间: {{.GenerateTime}}
-// package {{.PackageName}}
-
-// import (
-// 	"time"
-// 	"encoding/json"
-// )
-
-// // {{.TableInfo.ModelName}} {{.TableInfo.TableComment}}
-// type {{.TableInfo.ModelName}} struct {
-// {{- range .TableInfo.Columns}}
-// 	{{.FieldName}} {{.GoType}} ` + "`json:\"{{.JsonTag}}\"`" + ` // {{.ColumnComment}}
-// {{- end}}
-// }
-
-// // TableName 表名
-// func (m *{{.TableInfo.ModelName}}) TableName() string {
-// 	return "{{.TableInfo.TableName}}"
-// }
-// `
-
-// 	// 准备模板数据
-// 	data := struct {
-// 		PackageName  string
-// 		TableInfo    *TableInfo
-// 		GenerateTime string
-// 	}{
-// 		PackageName:  g.Config.PackageName,
-// 		TableInfo:    tableInfo,
-// 		GenerateTime: time.Now().Format("2006-01-02 15:04:05"),
-// 	}
-
-// 	// 解析模板
-// 	t, err := template.New("model").Parse(tmpl)
-// 	if err != nil {
-// 		return fmt.Errorf("解析模板失败: %v", err)
-// 	}
-
-// 	// 生成文件名
-// 	fileName := fmt.Sprintf("%s.go", strings.ToLower(tableInfo.ModelName))
-// 	filePath := filepath.Join(g.Config.OutputDir, fileName)
-
-// 	// 创建文件
-// 	file, err := os.Create(filePath)
-// 	if err != nil {
-// 		return fmt.Errorf("创建文件失败: %v", err)
-// 	}
-// 	defer file.Close()
-
-// 	// 执行模板
-// 	if err := t.Execute(file, data); err != nil {
-// 		return fmt.Errorf("执行模板失败: %v", err)
-// 	}
-
-// 	fmt.Printf("生成模型文件: %s\n", filePath)
-// 	return nil
-// }

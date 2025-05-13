@@ -34,7 +34,7 @@ func NewSQLiteGenerator(config *Config) (*SQLiteGenerator, error) {
 
 	// 测试连接
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("测试数据库连接失败: %v", err)
 	}
 
@@ -245,12 +245,8 @@ func (g *SQLiteGenerator) GetColumnInfo(tableName string) ([]ColumnInfo, error) 
 			}
 		}
 
-		// 添加注释
-		if columnComment != "" {
-			gormTag += fmt.Sprintf("comment:'%s';", strings.Replace(columnComment, "'", "\\'", -1))
-		} else {
-			gormTag += fmt.Sprintf("comment:'%s字段';", name)
-		}
+		// 添加注释（SQLite不支持列注释，使用列名）
+		gormTag += fmt.Sprintf("comment:'%s字段';", name)
 
 		col.GormTag = gormTag
 

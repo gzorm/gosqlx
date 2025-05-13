@@ -160,13 +160,13 @@ func (c *DBContext) RawTransaction(fn func(tx *sql.Tx) error) error {
 
 	defer func() {
 		if p := recover(); p != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			panic(p) // 重新抛出panic
 		}
 	}()
 
 	if err := fn(tx); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return err
 	}
 

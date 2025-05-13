@@ -9,13 +9,15 @@ type DatabaseType string
 
 // 支持的数据库类型常量
 const (
-	MySQL      DatabaseType = "mysql"
-	PostgreSQL DatabaseType = "postgres"
-	Oracle     DatabaseType = "oracle"
-	SQLServer  DatabaseType = "sqlserver"
-	SQLite     DatabaseType = "sqlite3"
-	MongoDB    DatabaseType = "mongodb"
-	TiDB       DatabaseType = "tidb"
+	MySQL       DatabaseType = "mysql"
+	PostgresSQL DatabaseType = "postgres"
+	Oracle      DatabaseType = "oracle"
+	SQLServer   DatabaseType = "sqlserver"
+	SQLite      DatabaseType = "sqlite3"
+	MongoDB     DatabaseType = "mongodb"
+	TiDB        DatabaseType = "tidb"
+	MariaDB     DatabaseType = "mariadb"
+	ClickHouse  DatabaseType = "clickhouse"
 )
 
 // Config 数据库配置结构

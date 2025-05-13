@@ -12,19 +12,68 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-// TiDBGenerator TiDB表结构生成器
-type TiDBGenerator struct {
+// TableInfo 表信息
+type TableInfo struct {
+	TableName    string       // 表名
+	TableComment string       // 表注释
+	Columns      []ColumnInfo // 列信息
+	PrimaryKeys  []string     // 主键
+	Indexes      []IndexInfo  // 索引
+	ModelName    string       // 模型名称（驼峰命名）
+}
+
+// ColumnInfo 列信息
+type ColumnInfo struct {
+	ColumnName    string // 列名
+	DataType      string // 数据类型
+	ColumnType    string // 列类型（包含长度等信息）
+	IsNullable    string // 是否可为空
+	ColumnKey     string // 键类型（PRI/UNI/MUL）
+	ColumnComment string // 列注释
+	Extra         string // 额外信息（如auto_increment）
+
+	// 生成Go结构体时使用
+	FieldName string // 字段名（驼峰命名）
+	GoType    string // Go类型
+	JsonTag   string // JSON标签
+	GormTag   string // GORM标签
+}
+
+// IndexInfo 索引信息
+type IndexInfo struct {
+	IndexName   string   // 索引名称
+	IndexType   string   // 索引类型（BTREE/FULLTEXT等）
+	IsUnique    bool     // 是否唯一索引
+	ColumnNames []string // 索引列名
+}
+
+// Config 生成配置
+type Config struct {
+	DBType       string // 数据库类型（mysql/postgresql等）
+	Host         string // 主机地址
+	Port         int    // 端口
+	Username     string // 用户名
+	Password     string // 密码
+	DatabaseName string // 数据库名
+	OutputDir    string // 输出目录
+	PackageName  string // 包名
+	// 添加这个字段
+	FirstLetterUpper bool // 是否将首字母大写
+	SingleFile       bool //
+}
+
+// MySQLGenerator MySQL表结构生成器
+type MySQLGenerator struct {
 	Config *Config
 	DB     *sql.DB
 }
 
-// NewTiDBGenerator 创建TiDB表结构生成器
-func NewTiDBGenerator(config *Config) (*TiDBGenerator, error) {
-	if config.DBType != "tidb" {
+// NewMySQLGenerator 创建MySQL表结构生成器
+func NewMySQLGenerator(config *Config) (*MySQLGenerator, error) {
+	if config.DBType != "mysql" {
 		return nil, fmt.Errorf("不支持的数据库类型: %s", config.DBType)
 	}
 
-	// TiDB 使用 MySQL 协议，因此连接字符串与 MySQL 相同
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		config.Username, config.Password, config.Host, config.Port, config.DatabaseName)
 
@@ -39,14 +88,14 @@ func NewTiDBGenerator(config *Config) (*TiDBGenerator, error) {
 		return nil, fmt.Errorf("测试数据库连接失败: %v", err)
 	}
 
-	return &TiDBGenerator{
+	return &MySQLGenerator{
 		Config: config,
 		DB:     db,
 	}, nil
 }
 
 // Close 关闭数据库连接
-func (g *TiDBGenerator) Close() error {
+func (g *MySQLGenerator) Close() error {
 	if g.DB != nil {
 		return g.DB.Close()
 	}
@@ -54,7 +103,7 @@ func (g *TiDBGenerator) Close() error {
 }
 
 // Generate 生成所有表的模型
-func (g *TiDBGenerator) Generate() error {
+func (g *MySQLGenerator) Generate() error {
 	// 获取所有表名
 	tables, err := g.GetAllTables()
 	if err != nil {
@@ -86,7 +135,7 @@ func (g *TiDBGenerator) Generate() error {
 }
 
 // GetAllTables 获取所有表名
-func (g *TiDBGenerator) GetAllTables() ([]string, error) {
+func (g *MySQLGenerator) GetAllTables() ([]string, error) {
 	query := "SHOW TABLES"
 	rows, err := g.DB.Query(query)
 	if err != nil {
@@ -107,7 +156,7 @@ func (g *TiDBGenerator) GetAllTables() ([]string, error) {
 }
 
 // GetTableInfo 获取表信息
-func (g *TiDBGenerator) GetTableInfo(tableName string) (*TableInfo, error) {
+func (g *MySQLGenerator) GetTableInfo(tableName string) (*TableInfo, error) {
 	// 获取表注释
 	var tableComment string
 	query := `
@@ -152,7 +201,7 @@ func (g *TiDBGenerator) GetTableInfo(tableName string) (*TableInfo, error) {
 }
 
 // GetColumnInfo 获取列信息
-func (g *TiDBGenerator) GetColumnInfo(tableName string) ([]ColumnInfo, error) {
+func (g *MySQLGenerator) GetColumnInfo(tableName string) ([]ColumnInfo, error) {
 	query := `
 		SELECT 
 			column_name, data_type, column_type, 
@@ -180,14 +229,14 @@ func (g *TiDBGenerator) GetColumnInfo(tableName string) ([]ColumnInfo, error) {
 
 		// 设置Go相关字段
 		col.FieldName = g.ToCamelCase(col.ColumnName)
-		col.GoType = g.MapTiDBTypeToGo(col.DataType, col.IsNullable == "YES")
+		col.GoType = g.MapMySQLTypeToGo(col.DataType, col.IsNullable == "YES")
 		col.JsonTag = col.ColumnName
 
 		// 生成GORM标签
 		gormTag := fmt.Sprintf("column:%s;", col.ColumnName)
 
 		// 添加类型信息
-		gormTag += fmt.Sprintf("type:%s;", col.ColumnType)
+		gormTag += fmt.Sprintf("type:%s;", g.GetGormDataType(col.DataType, col.ColumnType))
 
 		// 添加是否为空
 		if col.IsNullable == "NO" {
@@ -205,17 +254,10 @@ func (g *TiDBGenerator) GetColumnInfo(tableName string) ([]ColumnInfo, error) {
 		}
 
 		// 添加默认值
-		if strings.Contains(strings.ToLower(col.Extra), "default") ||
-			strings.Contains(col.Extra, "DEFAULT") {
+		if strings.Contains(strings.ToLower(col.Extra), "default") {
 			defaultValue := g.ExtractDefaultValue(col.Extra)
 			if defaultValue != "" {
-				// 如果默认值是字符串，需要处理引号
-				if strings.HasPrefix(defaultValue, "'") && strings.HasSuffix(defaultValue, "'") {
-					defaultValue = strings.Trim(defaultValue, "'")
-					gormTag += fmt.Sprintf("default:'%s';", strings.Replace(defaultValue, "'", "\\'", -1))
-				} else {
-					gormTag += fmt.Sprintf("default:%s;", defaultValue)
-				}
+				gormTag += fmt.Sprintf("default:%s;", defaultValue)
 			}
 		}
 
@@ -232,33 +274,29 @@ func (g *TiDBGenerator) GetColumnInfo(tableName string) ([]ColumnInfo, error) {
 	return columns, nil
 }
 
+// GetGormDataType 获取GORM数据类型
+func (g *MySQLGenerator) GetGormDataType(dataType string, columnType string) string {
+	// 从columnType中提取类型信息，如varchar(255)
+	return columnType
+}
+
 // ExtractDefaultValue 从Extra字段中提取默认值
-func (g *TiDBGenerator) ExtractDefaultValue(extra string) string {
+func (g *MySQLGenerator) ExtractDefaultValue(extra string) string {
 	if !strings.Contains(strings.ToLower(extra), "default") {
 		return ""
 	}
 
-	// 尝试匹配 DEFAULT xxx 格式
-	parts := strings.SplitN(extra, "DEFAULT ", 2)
+	parts := strings.Split(extra, "DEFAULT")
 	if len(parts) < 2 {
-		// 尝试匹配小写的 default xxx 格式
-		parts = strings.SplitN(extra, "default ", 2)
-		if len(parts) < 2 {
-			return ""
-		}
+		return ""
 	}
 
 	defaultValue := strings.TrimSpace(parts[1])
-	// 如果有其他额外信息，只取第一部分
-	if idx := strings.Index(defaultValue, " "); idx > 0 {
-		defaultValue = defaultValue[:idx]
-	}
-
 	return defaultValue
 }
 
 // GetPrimaryKeys 获取主键
-func (g *TiDBGenerator) GetPrimaryKeys(tableName string) ([]string, error) {
+func (g *MySQLGenerator) GetPrimaryKeys(tableName string) ([]string, error) {
 	query := `
 		SELECT column_name
 		FROM information_schema.key_column_usage
@@ -285,11 +323,16 @@ func (g *TiDBGenerator) GetPrimaryKeys(tableName string) ([]string, error) {
 }
 
 // GetIndexes 获取索引
-func (g *TiDBGenerator) GetIndexes(tableName string) ([]IndexInfo, error) {
-	// TiDB 支持 SHOW INDEX 命令
-	query := `SHOW INDEX FROM ` + tableName
+func (g *MySQLGenerator) GetIndexes(tableName string) ([]IndexInfo, error) {
+	query := `
+		SELECT 
+			index_name, non_unique, index_type, column_name
+		FROM information_schema.statistics
+		WHERE table_schema = ? AND table_name = ?
+		ORDER BY index_name, seq_in_index
+	`
 
-	rows, err := g.DB.Query(query)
+	rows, err := g.DB.Query(query, g.Config.DatabaseName, tableName)
 	if err != nil {
 		return nil, fmt.Errorf("查询索引失败: %v", err)
 	}
@@ -297,20 +340,12 @@ func (g *TiDBGenerator) GetIndexes(tableName string) ([]IndexInfo, error) {
 
 	indexMap := make(map[string]*IndexInfo)
 	for rows.Next() {
-		var tableName, indexName, columnName, indexType string
+		var indexName string
 		var nonUnique int
-		var seqInIndex, cardinality, subPart, packed, nullable, indexComment interface{}
+		var indexType, columnName string
 
-		// SHOW INDEX 返回的列顺序：
-		// Table, Non_unique, Key_name, Seq_in_index, Column_name, Collation, Cardinality,
-		// Sub_part, Packed, Null, Index_type, Comment, Index_comment, Visible, Expression
-		if err := rows.Scan(
-			&tableName, &nonUnique, &indexName, &seqInIndex, &columnName,
-			&nullable, &indexType, &indexComment, &cardinality, &subPart, &packed,
-		); err != nil {
-			// 如果列数不匹配，尝试更简单的扫描方式
-			rows.Close()
-			return g.GetIndexesAlternative(tableName)
+		if err := rows.Scan(&indexName, &nonUnique, &indexType, &columnName); err != nil {
+			return nil, fmt.Errorf("扫描索引失败: %v", err)
 		}
 
 		// 跳过主键索引，因为已经单独处理
@@ -340,61 +375,9 @@ func (g *TiDBGenerator) GetIndexes(tableName string) ([]IndexInfo, error) {
 	return indexes, nil
 }
 
-// GetIndexesAlternative 获取索引的替代方法
-func (g *TiDBGenerator) GetIndexesAlternative(tableName string) ([]IndexInfo, error) {
-	// 使用 information_schema 查询索引
-	query := `
-		SELECT 
-			index_name, 
-			NOT non_unique AS is_unique, 
-			index_type,
-			column_name
-		FROM information_schema.statistics
-		WHERE table_schema = ? AND table_name = ? AND index_name != 'PRIMARY'
-		ORDER BY index_name, seq_in_index
-	`
-
-	rows, err := g.DB.Query(query, g.Config.DatabaseName, tableName)
-	if err != nil {
-		return nil, fmt.Errorf("查询索引失败: %v", err)
-	}
-	defer rows.Close()
-
-	indexMap := make(map[string]*IndexInfo)
-	for rows.Next() {
-		var indexName, indexType, columnName string
-		var isUnique bool
-
-		if err := rows.Scan(&indexName, &isUnique, &indexType, &columnName); err != nil {
-			return nil, fmt.Errorf("扫描索引失败: %v", err)
-		}
-
-		// 如果索引不存在，创建新索引
-		if _, ok := indexMap[indexName]; !ok {
-			indexMap[indexName] = &IndexInfo{
-				IndexName: indexName,
-				IndexType: indexType,
-				IsUnique:  isUnique,
-			}
-		}
-
-		// 添加索引列
-		indexMap[indexName].ColumnNames = append(indexMap[indexName].ColumnNames, columnName)
-	}
-
-	// 转换为切片
-	var indexes []IndexInfo
-	for _, idx := range indexMap {
-		indexes = append(indexes, *idx)
-	}
-
-	return indexes, nil
-}
-
-// MapTiDBTypeToGo 将TiDB类型映射到Go类型
-func (g *TiDBGenerator) MapTiDBTypeToGo(tidbType string, isNullable bool) string {
-	// TiDB 与 MySQL 兼容，可以使用相同的类型映射
-	switch strings.ToLower(tidbType) {
+// MapMySQLTypeToGo 将MySQL类型映射到Go类型
+func (g *MySQLGenerator) MapMySQLTypeToGo(mysqlType string, isNullable bool) string {
+	switch strings.ToLower(mysqlType) {
 	case "tinyint", "smallint", "mediumint", "int", "integer":
 		if isNullable {
 			return "*int"
@@ -438,7 +421,7 @@ func (g *TiDBGenerator) MapTiDBTypeToGo(tidbType string, isNullable bool) string
 }
 
 // ToCamelCase 转换为驼峰命名
-func (g *TiDBGenerator) ToCamelCase(s string) string {
+func (g *MySQLGenerator) ToCamelCase(s string) string {
 	// 处理下划线分隔的命名
 	parts := strings.Split(s, "_")
 	for i := range parts {
@@ -450,27 +433,28 @@ func (g *TiDBGenerator) ToCamelCase(s string) string {
 }
 
 // GenerateModelFile 生成模型文件
-func (g *TiDBGenerator) GenerateModelFile(tableInfos []*TableInfo, outputDir string) error {
+func (g *MySQLGenerator) GenerateModelFile(tableInfos []*TableInfo, outputDir string) error {
+	// 模板定义
 	// 模板定义
 	tmpl := `// 代码由 gosqlx 自动生成，请勿手动修改
 // 生成时间: {{.GenerateTime}}
 package {{.PackageName}}
 
 import (
-	"time"	
+    "time"    
 )
 
 {{range .TableInfos}}
 // {{.ModelName}} {{.TableComment}}
 type {{.ModelName}} struct {
 {{- range .Columns}}
-	{{.FieldName}} {{.GoType}} ` + "`json:\"{{.JsonTag}}\" gorm:\"{{.GormTag}}\"`" + ` // {{.ColumnComment}}
+    {{.FieldName}} {{.GoType}} ` + "`json:\"{{.JsonTag}}\" gorm:\"{{.GormTag}}\"`" + ` // {{.ColumnComment}}
 {{- end}}
 }
 
 // TableName 表名
 func (m *{{.ModelName}}) TableName() string {
-	return "{{.TableName}}"
+    return "{{.TableName}}"
 }
 
 {{end}}

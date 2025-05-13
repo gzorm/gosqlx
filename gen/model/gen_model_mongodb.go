@@ -62,22 +62,17 @@ func NewMongoDBGenerator(config *Config) (*MongoDBGenerator, error) {
 		uri = fmt.Sprintf("mongodb://%s:%d/%s", config.Host, config.Port, config.DatabaseName)
 	}
 
-	// 创建客户端
-	client, err := mongo.NewClient(options.Client().ApplyURI(uri))
-	if err != nil {
-		return nil, fmt.Errorf("创建MongoDB客户端失败: %v", err)
-	}
-
-	// 连接到MongoDB
+	// 创建并连接到MongoDB
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := client.Connect(ctx); err != nil {
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+	if err != nil {
 		return nil, fmt.Errorf("连接MongoDB失败: %v", err)
 	}
 
 	// 测试连接
 	if err := client.Ping(ctx, nil); err != nil {
-		client.Disconnect(ctx)
+		_ = client.Disconnect(ctx)
 		return nil, fmt.Errorf("测试MongoDB连接失败: %v", err)
 	}
 

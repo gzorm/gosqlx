@@ -132,23 +132,23 @@ func (o *Oracle) BatchInsert(db *gorm.DB, table string, columns []string, values
 	}
 
 	// Oracle 批量插入使用 INSERT ALL 语法
-	var sql strings.Builder
-	sql.WriteString("INSERT ALL ")
+	var sqlBuilder strings.Builder
+	sqlBuilder.WriteString("INSERT ALL ")
 
 	// 构建每一行的 INTO 语句
 	for range values {
-		sql.WriteString(fmt.Sprintf("INTO %s (%s) VALUES (", table, strings.Join(columns, ", ")))
+		sqlBuilder.WriteString(fmt.Sprintf("INTO %s (%s) VALUES (", table, strings.Join(columns, ", ")))
 		for i := range columns {
 			if i > 0 {
-				sql.WriteString(", ")
+				sqlBuilder.WriteString(", ")
 			}
-			sql.WriteString("?")
+			sqlBuilder.WriteString("?")
 		}
-		sql.WriteString(") ")
+		sqlBuilder.WriteString(") ")
 	}
 
 	// 添加 SELECT 子句
-	sql.WriteString("SELECT 1 FROM DUAL")
+	sqlBuilder.WriteString("SELECT 1 FROM DUAL")
 
 	// 展平值数组
 	var flatValues []interface{}
@@ -157,7 +157,7 @@ func (o *Oracle) BatchInsert(db *gorm.DB, table string, columns []string, values
 	}
 
 	// 执行SQL
-	return db.Exec(sql.String(), flatValues...).Error
+	return db.Exec(sqlBuilder.String(), flatValues...).Error
 }
 
 // MergeInto 实现Oracle的MERGE INTO功能（相当于MySQL的ON DUPLICATE KEY UPDATE）
@@ -169,55 +169,55 @@ func (o *Oracle) MergeInto(db *gorm.DB, table string, columns []string, values [
 	// 为每一行数据生成一个MERGE语句
 	for _, row := range values {
 		// 构建MERGE INTO语句
-		var sql strings.Builder
-		sql.WriteString(fmt.Sprintf("MERGE INTO %s t USING (SELECT ", table))
+		var sqlBuilder strings.Builder
+		sqlBuilder.WriteString(fmt.Sprintf("MERGE INTO %s t USING (SELECT ", table))
 
 		// 构建VALUES部分
 		for i, col := range columns {
 			if i > 0 {
-				sql.WriteString(", ")
+				sqlBuilder.WriteString(", ")
 			}
-			sql.WriteString(fmt.Sprintf("? AS %s", col))
+			sqlBuilder.WriteString(fmt.Sprintf("? AS %s", col))
 		}
 
-		sql.WriteString(" FROM DUAL) s ON (")
+		sqlBuilder.WriteString(" FROM DUAL) s ON (")
 
 		// 构建ON条件
 		for i, key := range keyColumns {
 			if i > 0 {
-				sql.WriteString(" AND ")
+				sqlBuilder.WriteString(" AND ")
 			}
-			sql.WriteString(fmt.Sprintf("t.%s = s.%s", key, key))
+			sqlBuilder.WriteString(fmt.Sprintf("t.%s = s.%s", key, key))
 		}
 
-		sql.WriteString(") ")
+		sqlBuilder.WriteString(") ")
 
 		// 如果匹配则更新
 		if len(updateColumns) > 0 {
-			sql.WriteString("WHEN MATCHED THEN UPDATE SET ")
+			sqlBuilder.WriteString("WHEN MATCHED THEN UPDATE SET ")
 			for i, col := range updateColumns {
 				if i > 0 {
-					sql.WriteString(", ")
+					sqlBuilder.WriteString(", ")
 				}
-				sql.WriteString(fmt.Sprintf("t.%s = s.%s", col, col))
+				sqlBuilder.WriteString(fmt.Sprintf("t.%s = s.%s", col, col))
 			}
-			sql.WriteString(" ")
+			sqlBuilder.WriteString(" ")
 		}
 
 		// 如果不匹配则插入
-		sql.WriteString("WHEN NOT MATCHED THEN INSERT (")
-		sql.WriteString(strings.Join(columns, ", "))
-		sql.WriteString(") VALUES (")
+		sqlBuilder.WriteString("WHEN NOT MATCHED THEN INSERT (")
+		sqlBuilder.WriteString(strings.Join(columns, ", "))
+		sqlBuilder.WriteString(") VALUES (")
 		for i, col := range columns {
 			if i > 0 {
-				sql.WriteString(", ")
+				sqlBuilder.WriteString(", ")
 			}
-			sql.WriteString(fmt.Sprintf("s.%s", col))
+			sqlBuilder.WriteString(fmt.Sprintf("s.%s", col))
 		}
-		sql.WriteString(")")
+		sqlBuilder.WriteString(")")
 
 		// 执行SQL
-		if err := db.Exec(sql.String(), row...).Error; err != nil {
+		if err := db.Exec(sqlBuilder.String(), row...).Error; err != nil {
 			return err
 		}
 	}
@@ -227,29 +227,29 @@ func (o *Oracle) MergeInto(db *gorm.DB, table string, columns []string, values [
 
 // CreateSequence 创建序列
 func (o *Oracle) CreateSequence(db *gorm.DB, name string, startWith int, incrementBy int) error {
-	sql := fmt.Sprintf("CREATE SEQUENCE %s START WITH %d INCREMENT BY %d", name, startWith, incrementBy)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("CREATE SEQUENCE %s START WITH %d INCREMENT BY %d", name, startWith, incrementBy)
+	return db.Exec(sqlStr).Error
 }
 
 // DropSequence 删除序列
 func (o *Oracle) DropSequence(db *gorm.DB, name string) error {
-	sql := fmt.Sprintf("DROP SEQUENCE %s", name)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("DROP SEQUENCE %s", name)
+	return db.Exec(sqlStr).Error
 }
 
 // NextVal 获取序列的下一个值
 func (o *Oracle) NextVal(db *gorm.DB, name string) (int64, error) {
 	var result int64
-	sql := fmt.Sprintf("SELECT %s.NEXTVAL FROM DUAL", name)
-	err := db.Raw(sql).Scan(&result).Error
+	sqlStr := fmt.Sprintf("SELECT %s.NEXTVAL FROM DUAL", name)
+	err := db.Raw(sqlStr).Scan(&result).Error
 	return result, err
 }
 
 // CurrVal 获取序列的当前值
 func (o *Oracle) CurrVal(db *gorm.DB, name string) (int64, error) {
 	var result int64
-	sql := fmt.Sprintf("SELECT %s.CURRVAL FROM DUAL", name)
-	err := db.Raw(sql).Scan(&result).Error
+	sqlStr := fmt.Sprintf("SELECT %s.CURRVAL FROM DUAL", name)
+	err := db.Raw(sqlStr).Scan(&result).Error
 	return result, err
 }
 
@@ -487,32 +487,32 @@ func (o *Oracle) GetUsers(db *gorm.DB) ([]map[string]interface{}, error) {
 
 // CreateUser 创建用户
 func (o *Oracle) CreateUser(db *gorm.DB, username, password string, defaultTablespace, temporaryTablespace string) error {
-	sql := fmt.Sprintf(
+	sqlStr := fmt.Sprintf(
 		"CREATE USER %s IDENTIFIED BY %s DEFAULT TABLESPACE %s TEMPORARY TABLESPACE %s",
 		username, password, defaultTablespace, temporaryTablespace,
 	)
-	return db.Exec(sql).Error
+	return db.Exec(sqlStr).Error
 }
 
 // DropUser 删除用户
 func (o *Oracle) DropUser(db *gorm.DB, username string, cascade bool) error {
-	sql := fmt.Sprintf("DROP USER %s", username)
+	sqlStr := fmt.Sprintf("DROP USER %s", username)
 	if cascade {
-		sql += " CASCADE"
+		sqlStr += " CASCADE"
 	}
-	return db.Exec(sql).Error
+	return db.Exec(sqlStr).Error
 }
 
 // GrantPrivileges 授予权限
 func (o *Oracle) GrantPrivileges(db *gorm.DB, privileges string, objects string, username string) error {
-	sql := fmt.Sprintf("GRANT %s ON %s TO %s", privileges, objects, username)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("GRANT %s ON %s TO %s", privileges, objects, username)
+	return db.Exec(sqlStr).Error
 }
 
 // RevokePrivileges 撤销权限
 func (o *Oracle) RevokePrivileges(db *gorm.DB, privileges string, objects string, username string) error {
-	sql := fmt.Sprintf("REVOKE %s ON %s FROM %s", privileges, objects, username)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("REVOKE %s ON %s FROM %s", privileges, objects, username)
+	return db.Exec(sqlStr).Error
 }
 
 // QueryPage 分页查询
@@ -536,13 +536,13 @@ func (o *Oracle) QueryPage(out interface{}, page, pageSize int, filter interface
 	}
 
 	// 处理 filter 参数
-	var sql string
+	var sqlStr string
 	var values []interface{}
 
 	switch f := filter.(type) {
 	case string:
 		// 如果 filter 是 SQL 字符串
-		sql = f
+		sqlStr = f
 		// 提取剩余的参数作为 values
 		if len(opts) > 1 {
 			for _, v := range opts[1:] {
@@ -568,12 +568,12 @@ func (o *Oracle) QueryPage(out interface{}, page, pageSize int, filter interface
 
 		if len(conditions) > 0 {
 			if strings.Contains(strings.ToUpper(baseSQL), " WHERE ") {
-				sql = fmt.Sprintf("%s AND %s", baseSQL, strings.Join(conditions, " AND "))
+				sqlStr = fmt.Sprintf("%s AND %s", baseSQL, strings.Join(conditions, " AND "))
 			} else {
-				sql = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
+				sqlStr = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
 			}
 		} else {
-			sql = baseSQL
+			sqlStr = baseSQL
 		}
 	default:
 		return 0, fmt.Errorf("不支持的过滤条件类型")
@@ -584,7 +584,7 @@ func (o *Oracle) QueryPage(out interface{}, page, pageSize int, filter interface
 
 	// 查询总记录数
 	var total int64
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s)", sql)
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s)", sqlStr)
 	err := db.Raw(countSQL, values...).Count(&total).Error
 	if err != nil {
 		return 0, fmt.Errorf("查询总记录数失败: %w", err)
@@ -597,7 +597,7 @@ func (o *Oracle) QueryPage(out interface{}, page, pageSize int, filter interface
 
 	// 查询分页数据
 	// Oracle 12c 及以上版本使用 OFFSET ... ROWS FETCH NEXT ... ROWS ONLY 语法
-	pageSQL := fmt.Sprintf("%s OFFSET %d ROWS FETCH NEXT %d ROWS ONLY", sql, offset, pageSize)
+	pageSQL := fmt.Sprintf("%s OFFSET %d ROWS FETCH NEXT %d ROWS ONLY", sqlStr, offset, pageSize)
 	err = db.Raw(pageSQL, values...).Scan(out).Error
 	if err != nil {
 		return 0, fmt.Errorf("查询分页数据失败: %w", err)

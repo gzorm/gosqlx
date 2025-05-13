@@ -41,7 +41,7 @@ func initPostgresConfig() gosqlx.ConfigMap {
 	configs := gosqlx.ConfigMap{
 		"production": {
 			"main": &gosqlx.Config{
-				Type:        gosqlx.PostgreSQL,
+				Type:        gosqlx.PostgresSQL,
 				Driver:      "postgres",
 				Source:      "host=master.postgres.example.com port=5432 user=postgres password=password dbname=mydb sslmode=disable",
 				MaxIdle:     10,
@@ -50,7 +50,7 @@ func initPostgresConfig() gosqlx.ConfigMap {
 				Debug:       false,
 			},
 			"main_readonly": &gosqlx.Config{
-				Type:        gosqlx.PostgreSQL,
+				Type:        gosqlx.PostgresSQL,
 				Driver:      "postgres",
 				Source:      "host=slave.postgres.example.com port=5432 user=postgres_readonly password=password dbname=mydb sslmode=disable",
 				MaxIdle:     20,
@@ -174,6 +174,59 @@ func initTiDBConfig() gosqlx.ConfigMap {
 				Type:        gosqlx.TiDB,
 				Driver:      "mysql", // TiDB 使用 MySQL 驱动
 				Source:      "readonly_user:password@tcp(tidb.slave.example.com:4000)/dbname?charset=utf8mb4&parseTime=True&loc=Local",
+				MaxIdle:     20,
+				MaxOpen:     200,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+		},
+	}
+
+	return configs
+}
+func initClickHouseConfig() gosqlx.ConfigMap {
+	configs := gosqlx.ConfigMap{
+		"production": {
+			"main": &gosqlx.Config{
+				Type:        gosqlx.ClickHouse,
+				Driver:      "clickhouse",
+				Source:      "tcp://master.clickhouse.example.com:9000?username=default&password=password&database=mydb&debug=false",
+				MaxIdle:     10,
+				MaxOpen:     100,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+			"main_readonly": &gosqlx.Config{
+				Type:        gosqlx.ClickHouse,
+				Driver:      "clickhouse",
+				Source:      "tcp://slave.clickhouse.example.com:9000?username=readonly&password=password&database=mydb&debug=false",
+				MaxIdle:     20,
+				MaxOpen:     200,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+		},
+	}
+
+	return configs
+}
+
+func initMariaDBConfig() gosqlx.ConfigMap {
+	configs := gosqlx.ConfigMap{
+		"production": {
+			"main": &gosqlx.Config{
+				Type:        gosqlx.MariaDB,
+				Driver:      "mysql", // MariaDB 使用 MySQL 驱动
+				Source:      "user:password@tcp(master.mariadb.example.com:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local",
+				MaxIdle:     10,
+				MaxOpen:     100,
+				MaxLifetime: 3600,
+				Debug:       false,
+			},
+			"main_readonly": &gosqlx.Config{
+				Type:        gosqlx.MariaDB,
+				Driver:      "mysql", // MariaDB 使用 MySQL 驱动
+				Source:      "readonly_user:password@tcp(slave.mariadb.example.com:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local",
 				MaxIdle:     20,
 				MaxOpen:     200,
 				MaxLifetime: 3600,

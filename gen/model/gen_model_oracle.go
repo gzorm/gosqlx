@@ -35,7 +35,7 @@ func NewOracleGenerator(config *Config) (*OracleGenerator, error) {
 
 	// 测试连接
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("测试数据库连接失败: %v", err)
 	}
 

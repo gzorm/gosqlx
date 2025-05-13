@@ -16,7 +16,7 @@ func initTiDBDB(t *testing.T) *gosqlx.Database {
 	config := &gosqlx.Config{
 		Type:        gosqlx.TiDB,
 		Driver:      "mysql",                                                                         // TiDB 使用 MySQL 驱动
-		Source:      "root:root@tcp(localhost:4000)/testdb?charset=utf8mb4&parseTime=True&loc=Local", // TiDB 默认端口为4000
+		Source:      "root:root@tcp(localhost:4000)/testDb?charset=utf8mb4&parseTime=True&loc=Local", // TiDB 默认端口为4000
 		MaxIdle:     5,
 		MaxOpen:     10,
 		MaxLifetime: time.Hour,
@@ -98,7 +98,7 @@ func TestTiDBInsert(t *testing.T) {
 
 	// 创建用户
 	user := &User{
-		Username:  "testuser",
+		Username:  "testUser",
 		Email:     "test@example.com",
 		Age:       25,
 		Active:    true,
@@ -207,16 +207,16 @@ func TestTiDBTransaction(t *testing.T) {
 		// 插入用户
 		result, err := tx.ExecWithResult(
 			"INSERT INTO users (username, email, age, active) VALUES (?, ?, ?, ?)",
-			"txuser1", "tx1@example.com", 25, true,
+			"txUser1", "tx1@example.com", 25, true,
 		)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("事务中插入用户失败: %v", err)
 		}
 
 		userID, err := result.LastInsertId()
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("获取用户ID失败: %v", err)
 		}
 
@@ -226,7 +226,7 @@ func TestTiDBTransaction(t *testing.T) {
 			userID, "事务文章", "这是一篇事务测试文章",
 		)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("事务中插入文章失败: %v", err)
 		}
 
@@ -261,16 +261,16 @@ func TestTiDBTransaction(t *testing.T) {
 		// 插入用户
 		result, err := tx.ExecWithResult(
 			"INSERT INTO users (username, email, age, active) VALUES (?, ?, ?, ?)",
-			"txuser2", "tx2@example.com", 30, true,
+			"txUser2", "tx2@example.com", 30, true,
 		)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("事务中插入用户失败: %v", err)
 		}
 
 		userID, err := result.LastInsertId()
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			t.Fatalf("获取用户ID失败: %v", err)
 		}
 
@@ -309,7 +309,7 @@ func TestTiDBTransactionFunc(t *testing.T) {
 		// 在事务中插入用户
 		result, err := tx.ExecWithResult(
 			"INSERT INTO users (username, email, age, active) VALUES (?, ?, ?, ?)",
-			"txuser", "tx@example.com", 35, true,
+			"txUser", "tx@example.com", 35, true,
 		)
 		if err != nil {
 			return err
@@ -418,7 +418,7 @@ func TestTiDBJoinQuery(t *testing.T) {
 	// 插入用户数据
 	result, err := db.ExecWithResult(
 		"INSERT INTO users (username, email, age, active) VALUES (?, ?, ?, ?)",
-		"joinuser", "join@example.com", 30, true,
+		"joinUser", "join@example.com", 30, true,
 	)
 	if err != nil {
 		t.Fatalf("插入用户数据失败: %v", err)

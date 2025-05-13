@@ -683,13 +683,13 @@ func TestMySQLTransactionRollback(t *testing.T) {
 		"rollbackuser", "rollback@example.com", 40, true,
 	)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("事务中插入用户失败: %v", err)
 	}
 
 	userID, err := result.LastInsertId()
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("获取用户ID失败: %v", err)
 	}
 
@@ -1168,7 +1168,7 @@ func TestMySQLQueryBuilderTransaction(t *testing.T) {
 	err = db.Exec("INSERT INTO users (username, email, age, active) VALUES (?, ?, ?, ?)",
 		"txbuilder", "txbuilder@example.com", 30, true)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("事务中插入用户失败: %v", err)
 	}
 
@@ -1178,7 +1178,7 @@ func TestMySQLQueryBuilderTransaction(t *testing.T) {
 		Select("id", "username", "email").
 		Where("username = ?", "txbuilder").First(&user)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("事务中查询用户失败: %v", err)
 	}
 
@@ -1187,7 +1187,7 @@ func TestMySQLQueryBuilderTransaction(t *testing.T) {
 		Exec("INSERT INTO articles (user_id, title, content) VALUES (?, ?, ?)",
 			user.ID, "事务构建器文章", "这是一篇使用事务构建器创建的文章")
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("事务中插入文章失败: %v", err)
 	}
 

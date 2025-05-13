@@ -130,8 +130,8 @@ func (s *SQLServer) BatchInsert(db *gorm.DB, table string, columns []string, val
 	}
 
 	// SQL Server 批量插入
-	var sql strings.Builder
-	sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+	var sqlBuilder strings.Builder
+	sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
 
 	// 构建占位符
 	var placeholders []string
@@ -148,10 +148,10 @@ func (s *SQLServer) BatchInsert(db *gorm.DB, table string, columns []string, val
 		placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
 	}
 
-	sql.WriteString(strings.Join(placeholders, ", "))
+	sqlBuilder.WriteString(strings.Join(placeholders, ", "))
 
 	// 执行SQL
-	return db.Exec(sql.String(), flatValues...).Error
+	return db.Exec(sqlBuilder.String(), flatValues...).Error
 }
 
 // MergeInto 实现SQL Server的MERGE INTO功能
@@ -173,39 +173,39 @@ func (s *SQLServer) MergeInto(db *gorm.DB, table string, columns []string, value
 	}
 
 	// 构建MERGE语句
-	var sql strings.Builder
-	sql.WriteString(fmt.Sprintf("MERGE INTO %s AS target USING %s AS source ON ", table, tempTableName))
+	var sqlBuilder strings.Builder
+	sqlBuilder.WriteString(fmt.Sprintf("MERGE INTO %s AS target USING %s AS source ON ", table, tempTableName))
 
 	// 构建ON条件
 	var onConditions []string
 	for _, key := range keyColumns {
 		onConditions = append(onConditions, fmt.Sprintf("target.%s = source.%s", key, key))
 	}
-	sql.WriteString(strings.Join(onConditions, " AND "))
+	sqlBuilder.WriteString(strings.Join(onConditions, " AND "))
 
 	// 如果匹配则更新
 	if len(updateColumns) > 0 {
-		sql.WriteString(" WHEN MATCHED THEN UPDATE SET ")
+		sqlBuilder.WriteString(" WHEN MATCHED THEN UPDATE SET ")
 		var updates []string
 		for _, col := range updateColumns {
 			updates = append(updates, fmt.Sprintf("target.%s = source.%s", col, col))
 		}
-		sql.WriteString(strings.Join(updates, ", "))
+		sqlBuilder.WriteString(strings.Join(updates, ", "))
 	}
 
 	// 如果不匹配则插入
-	sql.WriteString(" WHEN NOT MATCHED THEN INSERT (")
-	sql.WriteString(strings.Join(columns, ", "))
-	sql.WriteString(") VALUES (")
+	sqlBuilder.WriteString(" WHEN NOT MATCHED THEN INSERT (")
+	sqlBuilder.WriteString(strings.Join(columns, ", "))
+	sqlBuilder.WriteString(") VALUES (")
 	var sourceColumns []string
 	for _, col := range columns {
 		sourceColumns = append(sourceColumns, "source."+col)
 	}
-	sql.WriteString(strings.Join(sourceColumns, ", "))
-	sql.WriteString(");")
+	sqlBuilder.WriteString(strings.Join(sourceColumns, ", "))
+	sqlBuilder.WriteString(");")
 
 	// 执行MERGE
-	if err := db.Exec(sql.String()).Error; err != nil {
+	if err := db.Exec(sqlBuilder.String()).Error; err != nil {
 		return err
 	}
 
@@ -584,12 +584,12 @@ func (s *SQLServer) CreateUser(db *gorm.DB, loginName, username, defaultSchema s
 	}
 
 	// 创建用户
-	sql := fmt.Sprintf("CREATE USER [%s] FOR LOGIN [%s]", username, loginName)
+	sqlStr := fmt.Sprintf("CREATE USER [%s] FOR LOGIN [%s]", username, loginName)
 	if defaultSchema != "" {
-		sql += fmt.Sprintf(" WITH DEFAULT_SCHEMA = [%s]", defaultSchema)
+		sqlStr += fmt.Sprintf(" WITH DEFAULT_SCHEMA = [%s]", defaultSchema)
 	}
 
-	if err := db.Exec(sql).Error; err != nil {
+	if err := db.Exec(sqlStr).Error; err != nil {
 		return err
 	}
 
@@ -616,14 +616,14 @@ func (s *SQLServer) DropUser(db *gorm.DB, username string) error {
 
 // GrantPrivileges 授予权限
 func (s *SQLServer) GrantPrivileges(db *gorm.DB, privileges string, objects string, username string) error {
-	sql := fmt.Sprintf("GRANT %s ON %s TO [%s]", privileges, objects, username)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("GRANT %s ON %s TO [%s]", privileges, objects, username)
+	return db.Exec(sqlStr).Error
 }
 
 // RevokePrivileges 撤销权限
 func (s *SQLServer) RevokePrivileges(db *gorm.DB, privileges string, objects string, username string) error {
-	sql := fmt.Sprintf("REVOKE %s ON %s FROM [%s]", privileges, objects, username)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("REVOKE %s ON %s FROM [%s]", privileges, objects, username)
+	return db.Exec(sqlStr).Error
 }
 
 // GetDatabaseFiles 获取数据库文件信息
@@ -649,8 +649,8 @@ func (s *SQLServer) GetDatabaseFiles(db *gorm.DB, database string) ([]map[string
 
 // BackupDatabase 备份数据库
 func (s *SQLServer) BackupDatabase(db *gorm.DB, database, backupFile string) error {
-	sql := fmt.Sprintf("BACKUP DATABASE [%s] TO DISK = N'%s' WITH NOFORMAT, NOINIT, NAME = N'%s-Full Database Backup', SKIP, NOREWIND, NOUNLOAD, STATS = 10", database, backupFile, database)
-	return db.Exec(sql).Error
+	sqlStr := fmt.Sprintf("BACKUP DATABASE [%s] TO DISK = N'%s' WITH NOFORMAT, NOINIT, NAME = N'%s-Full Database Backup', SKIP, NOREWIND, NOUNLOAD, STATS = 10", database, backupFile, database)
+	return db.Exec(sqlStr).Error
 }
 
 // RestoreDatabase 恢复数据库
@@ -699,13 +699,13 @@ func (s *SQLServer) QueryPage(out interface{}, page, pageSize int, filter interf
 	}
 
 	// 处理 filter 参数
-	var sql string
+	var sqlStr string
 	var values []interface{}
 
 	switch f := filter.(type) {
 	case string:
 		// 如果 filter 是 SQL 字符串
-		sql = f
+		sqlStr = f
 		// 提取剩余的参数作为 values
 		if len(opts) > 1 {
 			for _, v := range opts[1:] {
@@ -733,12 +733,12 @@ func (s *SQLServer) QueryPage(out interface{}, page, pageSize int, filter interf
 
 		if len(conditions) > 0 {
 			if strings.Contains(strings.ToUpper(baseSQL), " WHERE ") {
-				sql = fmt.Sprintf("%s AND %s", baseSQL, strings.Join(conditions, " AND "))
+				sqlStr = fmt.Sprintf("%s AND %s", baseSQL, strings.Join(conditions, " AND "))
 			} else {
-				sql = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
+				sqlStr = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
 			}
 		} else {
-			sql = baseSQL
+			sqlStr = baseSQL
 		}
 	default:
 		return 0, fmt.Errorf("不支持的过滤条件类型")
@@ -749,7 +749,7 @@ func (s *SQLServer) QueryPage(out interface{}, page, pageSize int, filter interf
 
 	// 查询总记录数
 	var total int64
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS count_table", sql)
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS count_table", sqlStr)
 	err := db.Raw(countSQL, values...).Count(&total).Error
 	if err != nil {
 		return 0, fmt.Errorf("查询总记录数失败: %w", err)
@@ -763,12 +763,12 @@ func (s *SQLServer) QueryPage(out interface{}, page, pageSize int, filter interf
 	// 查询分页数据
 	// SQL Server 2012+ 使用 OFFSET-FETCH 语法
 	// 注意：SQL Server 要求 ORDER BY 子句
-	if !strings.Contains(strings.ToUpper(sql), "ORDER BY") {
+	if !strings.Contains(strings.ToUpper(sqlStr), "ORDER BY") {
 		// 如果原始SQL没有ORDER BY子句，添加一个默认的
-		sql = fmt.Sprintf("%s ORDER BY (SELECT NULL)", sql)
+		sqlStr = fmt.Sprintf("%s ORDER BY (SELECT NULL)", sqlStr)
 	}
 
-	pageSQL := fmt.Sprintf("%s OFFSET %d ROWS FETCH NEXT %d ROWS ONLY", sql, offset, pageSize)
+	pageSQL := fmt.Sprintf("%s OFFSET %d ROWS FETCH NEXT %d ROWS ONLY", sqlStr, offset, pageSize)
 	err = db.Raw(pageSQL, values...).Scan(out).Error
 	if err != nil {
 		return 0, fmt.Errorf("查询分页数据失败: %w", err)

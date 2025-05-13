@@ -131,8 +131,8 @@ func (t *TiDB) BatchInsert(db *gorm.DB, table string, columns []string, values [
 	}
 
 	// 构建INSERT语句
-	var sql strings.Builder
-	sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+	var sqlBuilder strings.Builder
+	sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
 
 	// 构建占位符
 	placeholder := "(" + strings.Repeat("?,", len(columns))
@@ -141,9 +141,9 @@ func (t *TiDB) BatchInsert(db *gorm.DB, table string, columns []string, values [
 	// 添加多行值
 	for i := range values {
 		if i > 0 {
-			sql.WriteString(", ")
+			sqlBuilder.WriteString(", ")
 		}
-		sql.WriteString(placeholder)
+		sqlBuilder.WriteString(placeholder)
 	}
 
 	// 展平值数组
@@ -153,7 +153,7 @@ func (t *TiDB) BatchInsert(db *gorm.DB, table string, columns []string, values [
 	}
 
 	// 执行SQL
-	return db.Exec(sql.String(), flatValues...).Error
+	return db.Exec(sqlBuilder.String(), flatValues...).Error
 }
 
 // MergeInto 实现TiDB的UPSERT功能（ON DUPLICATE KEY UPDATE）
@@ -163,8 +163,8 @@ func (t *TiDB) MergeInto(db *gorm.DB, table string, columns []string, values [][
 	}
 
 	// 构建INSERT语句
-	var sql strings.Builder
-	sql.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
+	var sqlBuilder strings.Builder
+	sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
 
 	// 构建占位符
 	placeholder := "(" + strings.Repeat("?,", len(columns))
@@ -173,19 +173,19 @@ func (t *TiDB) MergeInto(db *gorm.DB, table string, columns []string, values [][
 	// 添加多行值
 	for i := range values {
 		if i > 0 {
-			sql.WriteString(", ")
+			sqlBuilder.WriteString(", ")
 		}
-		sql.WriteString(placeholder)
+		sqlBuilder.WriteString(placeholder)
 	}
 
 	// 如果有更新列，添加ON DUPLICATE KEY UPDATE子句
 	if len(updateColumns) > 0 {
-		sql.WriteString(" ON DUPLICATE KEY UPDATE ")
+		sqlBuilder.WriteString(" ON DUPLICATE KEY UPDATE ")
 		for i, col := range updateColumns {
 			if i > 0 {
-				sql.WriteString(", ")
+				sqlBuilder.WriteString(", ")
 			}
-			sql.WriteString(fmt.Sprintf("%s = VALUES(%s)", col, col))
+			sqlBuilder.WriteString(fmt.Sprintf("%s = VALUES(%s)", col, col))
 		}
 	}
 
@@ -196,7 +196,7 @@ func (t *TiDB) MergeInto(db *gorm.DB, table string, columns []string, values [][
 	}
 
 	// 执行SQL
-	return db.Exec(sql.String(), flatValues...).Error
+	return db.Exec(sqlBuilder.String(), flatValues...).Error
 }
 
 // QueryPage 分页查询
@@ -220,13 +220,13 @@ func (t *TiDB) QueryPage(out interface{}, page, pageSize int, filter interface{}
 	}
 
 	// 处理 filter 参数
-	var sql string
+	var sqlStr string
 	var values []interface{}
 
 	switch f := filter.(type) {
 	case string:
 		// 如果 filter 是 SQL 字符串
-		sql = f
+		sqlStr = f
 		// 提取剩余的参数作为 values
 		if len(opts) > 1 {
 			for _, v := range opts[1:] {
@@ -252,12 +252,12 @@ func (t *TiDB) QueryPage(out interface{}, page, pageSize int, filter interface{}
 
 		if len(conditions) > 0 {
 			if strings.Contains(strings.ToUpper(baseSQL), " WHERE ") {
-				sql = fmt.Sprintf("%s AND %s", baseSQL, strings.Join(conditions, " AND "))
+				sqlStr = fmt.Sprintf("%s AND %s", baseSQL, strings.Join(conditions, " AND "))
 			} else {
-				sql = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
+				sqlStr = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
 			}
 		} else {
-			sql = baseSQL
+			sqlStr = baseSQL
 		}
 	default:
 		return 0, fmt.Errorf("不支持的过滤条件类型")
@@ -268,7 +268,7 @@ func (t *TiDB) QueryPage(out interface{}, page, pageSize int, filter interface{}
 
 	// 查询总记录数
 	var total int64
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS count_table", sql)
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS count_table", sqlStr)
 	err := db.Raw(countSQL, values...).Count(&total).Error
 	if err != nil {
 		return 0, fmt.Errorf("查询总记录数失败: %w", err)
@@ -280,7 +280,7 @@ func (t *TiDB) QueryPage(out interface{}, page, pageSize int, filter interface{}
 	}
 
 	// 查询分页数据
-	pageSQL := fmt.Sprintf("%s LIMIT %d OFFSET %d", sql, pageSize, offset)
+	pageSQL := fmt.Sprintf("%s LIMIT %d OFFSET %d", sqlStr, pageSize, offset)
 	err = db.Raw(pageSQL, values...).Scan(out).Error
 	if err != nil {
 		return 0, fmt.Errorf("查询分页数据失败: %w", err)

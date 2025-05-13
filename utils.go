@@ -51,8 +51,8 @@ func ReflectTableName(out interface{}) string {
 	// 处理结构体类型
 	if t.Kind() == reflect.Struct {
 		// 尝试使用GORM的表名推断
-		if tabler, ok := out.(interface{ TableName() string }); ok {
-			return tabler.TableName()
+		if table, ok := out.(interface{ TableName() string }); ok {
+			return table.TableName()
 		}
 
 		// 使用类型名作为表名

@@ -41,9 +41,9 @@ type PgUserArticle struct {
 func initPostgresDB(t *testing.T) *gosqlx.Database {
 	// 创建数据库配置
 	config := &gosqlx.Config{
-		Type:        gosqlx.PostgreSQL,
+		Type:        gosqlx.PostgresSQL,
 		Driver:      "postgres",
-		Source:      "host=localhost port=5432 user=postgres password=postgres dbname=testdb sslmode=disable",
+		Source:      "host=localhost port=5432 user=postgres password=postgres dbname=testDb sslmode=disable",
 		MaxIdle:     5,
 		MaxOpen:     10,
 		MaxLifetime: time.Hour,
@@ -55,7 +55,7 @@ func initPostgresDB(t *testing.T) *gosqlx.Database {
 		Context: context.Background(),
 		Nick:    "postgres_test",
 		Mode:    "rw",
-		DBType:  gosqlx.PostgreSQL,
+		DBType:  gosqlx.PostgresSQL,
 		Timeout: time.Second * 10,
 	}
 

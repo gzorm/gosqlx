@@ -254,7 +254,12 @@ func (m *MongoDB) ListCollections(filter interface{}, opts ...*options.ListColle
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func(cursor *mongo.Cursor, ctx context.Context) {
+		err := cursor.Close(ctx)
+		if err != nil {
+
+		}
+	}(cursor, ctx)
 
 	var collections []string
 	for cursor.Next(ctx) {
@@ -315,7 +320,12 @@ func (m *MongoDB) ListIndexes(collection string) ([]bson.M, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func(cursor *mongo.Cursor, ctx context.Context) {
+		err := cursor.Close(ctx)
+		if err != nil {
+
+		}
+	}(cursor, ctx)
 
 	var indexes []bson.M
 	if err = cursor.All(ctx, &indexes); err != nil {
@@ -431,7 +441,12 @@ func (m *MongoDB) QueryPage(out interface{}, page, pageSize int, filter interfac
 	if err != nil {
 		return 0, fmt.Errorf("查询分页数据失败: %w", err)
 	}
-	defer cursor.Close(ctx)
+	defer func(cursor *mongo.Cursor, ctx context.Context) {
+		err := cursor.Close(ctx)
+		if err != nil {
+
+		}
+	}(cursor, ctx)
 
 	// 解码结果到输出参数
 	err = cursor.All(ctx, out)

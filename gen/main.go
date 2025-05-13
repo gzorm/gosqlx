@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/gzorm/gosqlx/gen/model"
 	"log"
+
+	"github.com/gzorm/gosqlx/gen/model"
 )
 
 func main() {
@@ -111,6 +112,39 @@ func gen_MongoDb_POES() {
 		Port:         27017,
 		Username:     "admin",    // 可选
 		Password:     "password", // 可选
+		DatabaseName: "test_db",
+		OutputDir:    "./gen/model", // 会自动创建 model/poes 目录
+		PackageName:  "poes",        // 生成的包名
+	}
+
+	if err := model.GenerateModels(config); err != nil {
+		log.Fatalf("生成模型失败: %v", err)
+	}
+}
+func gen_MariaDB_POES() {
+	config := &model.Config{
+		DBType:       "mariadb",
+		Host:         "localhost",
+		Port:         3306,
+		Username:     "root",
+		Password:     "password",
+		DatabaseName: "test_db",
+		OutputDir:    "./gen/model", // 会自动创建 model/poes 目录
+		PackageName:  "poes",        // 生成的包名
+	}
+
+	if err := model.GenerateModels(config); err != nil {
+		log.Fatalf("生成模型失败: %v", err)
+	}
+}
+
+func gen_ClickHouse_POES() {
+	config := &model.Config{
+		DBType:       "clickhouse",
+		Host:         "localhost",
+		Port:         9000, // ClickHouse 默认端口
+		Username:     "default",
+		Password:     "",
 		DatabaseName: "test_db",
 		OutputDir:    "./gen/model", // 会自动创建 model/poes 目录
 		PackageName:  "poes",        // 生成的包名

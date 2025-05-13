@@ -75,6 +75,16 @@ func (o *Order) OrderByRandom() *Order {
 	return o
 }
 
+// MySqlOrderByRandom 添加 MySQL 特定的随机排序
+func (o *Order) MySqlOrderByRandom() *Order {
+	return o.OrderBy("RAND()")
+}
+
+// PostgreSQLOrderByRandom 添加 PostgreSQL 特定的随机排序
+func (o *Order) PostgreSQLOrderByRandom() *Order {
+	return o.OrderBy("RANDOM()")
+}
+
 // OrderByIf 条件排序
 // 示例: OrderByIf(true, "id DESC")
 func (o *Order) OrderByIf(condition bool, order string) *Order {

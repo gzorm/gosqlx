@@ -282,25 +282,25 @@ func (q *Query) Min(field string) *Query {
 
 // Get 获取多条记录
 func (q *Query) Get(out interface{}) error {
-	sql, args := q.BuildSelect()
-	return q.execQuery(sql, args, out)
+	sqlStr, args := q.BuildSelect()
+	return q.execQuery(sqlStr, args, out)
 }
 
 // First 获取单条记录
 func (q *Query) First(out interface{}) error {
 	q.limit = 1
-	sql, args := q.BuildSelect()
-	return q.execQuery(sql, args, out)
+	sqlStr, args := q.BuildSelect()
+	return q.execQuery(sqlStr, args, out)
 }
 
 // Value 获取单个值
 func (q *Query) Value(column string) (interface{}, error) {
 	q.columns = []string{column}
 	q.limit = 1
-	sql, args := q.BuildSelect()
+	sqlStr, args := q.BuildSelect()
 
 	var value interface{}
-	err := q.execQueryRow(sql, args, &value)
+	err := q.execQueryRow(sqlStr, args, &value)
 	return value, err
 }
 
@@ -340,10 +340,10 @@ func (q *Query) CountNum() (int64, error) {
 	q.offset = 0
 	q.order = builder.NewOrder()
 
-	sql, args := q.BuildSelect()
+	sqlStr, args := q.BuildSelect()
 
 	var count int64
-	err := q.execQueryRow(sql, args, &count)
+	err := q.execQueryRow(sqlStr, args, &count)
 
 	q.columns = oldColumns
 	q.limit = oldLimit
@@ -363,10 +363,10 @@ func (q *Query) SumNum(field string) (float64, error) {
 	q.limit = 0
 	q.offset = 0
 
-	sql, args := q.BuildSelect()
+	sqlStr, args := q.BuildSelect()
 
 	var sum float64
-	err := q.execQueryRow(sql, args, &sum)
+	err := q.execQueryRow(sqlStr, args, &sum)
 
 	q.columns = oldColumns
 	q.limit = oldLimit
@@ -385,10 +385,10 @@ func (q *Query) AvgNum(field string) (float64, error) {
 	q.limit = 0
 	q.offset = 0
 
-	sql, args := q.BuildSelect()
+	sqlStr, args := q.BuildSelect()
 
 	var avg float64
-	err := q.execQueryRow(sql, args, &avg)
+	err := q.execQueryRow(sqlStr, args, &avg)
 
 	q.columns = oldColumns
 	q.limit = oldLimit
@@ -407,16 +407,16 @@ func (q *Query) MaxNum(field string) (interface{}, error) {
 	q.limit = 0
 	q.offset = 0
 
-	sql, args := q.BuildSelect()
+	sqlBulder, args := q.BuildSelect()
 
-	var max interface{}
-	err := q.execQueryRow(sql, args, &max)
+	var maxValue interface{}
+	err := q.execQueryRow(sqlBulder, args, &maxValue)
 
 	q.columns = oldColumns
 	q.limit = oldLimit
 	q.offset = oldOffset
 
-	return max, err
+	return maxValue, err
 }
 
 // MinNum 获取最小值
@@ -429,16 +429,16 @@ func (q *Query) MinNum(field string) (interface{}, error) {
 	q.limit = 0
 	q.offset = 0
 
-	sql, args := q.BuildSelect()
+	sqlBuilder, args := q.BuildSelect()
 
-	var min interface{}
-	err := q.execQueryRow(sql, args, &min)
+	var minValue interface{}
+	err := q.execQueryRow(sqlBuilder, args, &minValue)
 
 	q.columns = oldColumns
 	q.limit = oldLimit
 	q.offset = oldOffset
 
-	return min, err
+	return minValue, err
 }
 
 // BuildSelect 构建SELECT语句
@@ -512,15 +512,26 @@ func (q *Query) BuildSelect() (string, []interface{}) {
 	if q.limit > 0 {
 		query.WriteString(fmt.Sprintf(" LIMIT %d", q.limit))
 		if q.offset > 0 {
+			// ClickHouse 使用 OFFSET 语法，而不是 MySQL 的 LIMIT x,y 语法
 			query.WriteString(fmt.Sprintf(" OFFSET %d", q.offset))
 		}
 	}
 
 	// FOR UPDATE / FOR SHARE
-	if q.forUpdate {
-		query.WriteString(" FOR UPDATE")
-	} else if q.forShare {
-		query.WriteString(" FOR SHARE")
+	// 检查是否为 ClickHouse 数据库，如果是则跳过锁定语句
+	isClickHouse := false
+	if db, ok := q.db.(*sql.DB); ok {
+		if driver := reflect.TypeOf(db.Driver()).String(); strings.Contains(strings.ToLower(driver), "clickhouse") {
+			isClickHouse = true
+		}
+	}
+
+	if !isClickHouse {
+		if q.forUpdate {
+			query.WriteString(" FOR UPDATE")
+		} else if q.forShare {
+			query.WriteString(" FOR SHARE")
+		}
 	}
 
 	// 合并参数
