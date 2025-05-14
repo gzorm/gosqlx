@@ -4,13 +4,7 @@
 
 ## 💖 Support This Project
 
-Your support means a lot to us! If GoSQLX has helped you solve problems, please consider:
-
-- ⭐ Giving the project a star
-- 🔄 Sharing it with your colleagues and friends
-- 🐛 Reporting issues you find
-- 🔧 Submitting PRs to help improve the project
-- 📝 Sharing your experience using GoSQLX
+⭐ If you like GoSQLX, don't forget to star this project on GitHub!
 
 [![Star this project](https://img.shields.io/github/stars/gzorm/gosqlx.svg?style=social)](https://github.com/gzorm/gosqlx)
 

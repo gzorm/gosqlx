@@ -2,15 +2,11 @@
 
 ## 💖 支持项目
 
-您的支持对我们意义重大！如果GoSQLX帮助您解决了问题，请考虑：
-
-- ⭐ 给项目一个星标
-- 🔄 分享给您的同事和朋友
-- 🐛 报告您发现的问题
-- 🔧 提交PR帮助改进项目
-- 📝 分享您使用GoSQLX的经验
+🌟 **如果你觉得本项目有用，请先点个 Star 支持我们！**  
 
 [![给项目加星](https://img.shields.io/github/stars/gzorm/gosqlx.svg?style=social)](https://github.com/gzorm/gosqlx)
+
+
 ## 简介
 GoSQLX 是一个功能强大的 Go 语言数据库操作框架，提供了统一的接口来操作多种关系型数据库，包括 MySQL、PostgreSQL、Oracle、SQL Server、Tidb、Mongodb  和 SQLite。它基于 GORM 和标准库构建，同时提供了更高级的抽象和功能扩展。
 
