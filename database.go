@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -909,4 +911,39 @@ func (d *Database) Close() error {
 		return d.sqlDB.Close()
 	}
 	return nil
+}
+
+// ShardingTable 返回分表后的 *gorm.DB
+func (d *Database) ShardingTable(baseName string, shardingKey interface{}, tableCount int) *gorm.DB {
+	tableName := ShardingTableName(baseName, shardingKey, tableCount)
+	return d.db.Table(tableName)
+}
+
+// 分表插入
+func (d *Database) ShardingCreate(baseName string, shardingKey interface{}, tableCount int, value interface{}) error {
+	return d.ShardingTable(baseName, shardingKey, tableCount).Create(value).Error
+}
+
+// 分表查询
+func (d *Database) ShardingFind(baseName string, shardingKey interface{}, tableCount int, out interface{}, where ...interface{}) error {
+	return d.ShardingTable(baseName, shardingKey, tableCount).Find(out, where...).Error
+}
+
+// 分表更新
+func (d *Database) ShardingUpdate(baseName string, shardingKey interface{}, tableCount int, model interface{}, column string, value interface{}) error {
+	return d.ShardingTable(baseName, shardingKey, tableCount).Model(model).Update(column, value).Error
+}
+
+// 分表删除
+func (d *Database) ShardingDelete(baseName string, shardingKey interface{}, tableCount int, model interface{}, where ...interface{}) error {
+	return d.ShardingTable(baseName, shardingKey, tableCount).Delete(model, where...).Error
+}
+
+// ShardingTableName 根据分表键和分表数生成分表表名
+func ShardingTableName(baseName string, shardingKey interface{}, tableCount int) string {
+	keyStr := fmt.Sprintf("%v", shardingKey)
+	h := fnv.New32a()
+	h.Write([]byte(keyStr))
+	idx := h.Sum32() % uint32(tableCount)
+	return baseName + "_" + strconv.Itoa(int(idx))
 }
