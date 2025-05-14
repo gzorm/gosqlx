@@ -375,7 +375,7 @@ func (m *MongoDB) BuildURI(host string, port int, username, password, database s
 	return uri
 }
 
-func (m *MongoDB) QueryPage(out interface{}, page, pageSize int, tableName string, filter interface{}, opts ...interface{}) (int64, error) {
+func (m *MongoDB) QueryPage(dbOption interface{}, out interface{}, page, pageSize int, tableName string, orderBy []interface{}, filter ...interface{}) (int64, error) {
 	if m.client == nil {
 		return 0, fmt.Errorf("MongoDB客户端未初始化")
 	}
@@ -399,26 +399,34 @@ func (m *MongoDB) QueryPage(out interface{}, page, pageSize int, tableName strin
 
 	// 使用提供的表名作为集合名
 	collection := tableName
-	var sort bson.D
-	var findOpts []*options.FindOptions
 
-	// 处理可选参数
-	for i, opt := range opts {
-		switch i {
-		case 0:
-			// 第一个参数应该是 *mongo.Client 或 *gorm.DB
-			// 但我们已经有了 m.client，所以这里不需要处理
-		case 1:
-			// 第二个参数可能是排序条件
-			if sortOpt, ok := opt.(bson.D); ok {
-				sort = sortOpt
-			} else if findOpt, ok := opt.(*options.FindOptions); ok {
-				findOpts = append(findOpts, findOpt)
-			}
-		default:
-			// 其他参数可能是 FindOptions
-			if findOpt, ok := opt.(*options.FindOptions); ok {
-				findOpts = append(findOpts, findOpt)
+	// 处理查询条件
+	var queryFilter interface{} = bson.D{}
+	if len(filter) > 0 && filter[0] != nil {
+		queryFilter = filter[0]
+	}
+
+	// 处理排序
+	var sortOptions bson.D
+	if len(orderBy) > 0 {
+		for _, order := range orderBy {
+			if orderStr, ok := order.(string); ok {
+				// 解析排序字符串，例如 "name ASC", "age DESC"
+				parts := strings.Fields(orderStr)
+				if len(parts) >= 2 {
+					field := parts[0]
+					direction := 1 // 默认升序
+					if strings.ToUpper(parts[1]) == "DESC" {
+						direction = -1
+					}
+					sortOptions = append(sortOptions, bson.E{Key: field, Value: direction})
+				} else if len(parts) == 1 {
+					// 只有字段名，默认升序
+					sortOptions = append(sortOptions, bson.E{Key: parts[0], Value: 1})
+				}
+			} else if sortDoc, ok := order.(bson.D); ok {
+				// 直接使用 bson.D 类型的排序
+				sortOptions = append(sortOptions, sortDoc...)
 			}
 		}
 	}
@@ -426,7 +434,7 @@ func (m *MongoDB) QueryPage(out interface{}, page, pageSize int, tableName strin
 	coll := m.client.Database(m.Database).Collection(collection)
 
 	// 查询总记录数
-	total, err := coll.CountDocuments(ctx, filter)
+	total, err := coll.CountDocuments(ctx, queryFilter)
 	if err != nil {
 		return 0, fmt.Errorf("查询总记录数失败: %w", err)
 	}
@@ -440,33 +448,12 @@ func (m *MongoDB) QueryPage(out interface{}, page, pageSize int, tableName strin
 	findOptions := options.Find().SetSkip(int64(skip)).SetLimit(int64(pageSize))
 
 	// 添加排序条件
-	if sort != nil {
-		findOptions.SetSort(sort)
-	}
-
-	// 合并其他 FindOptions
-	for _, opt := range findOpts {
-		// 只合并非空的选项
-		if opt.Projection != nil {
-			findOptions.SetProjection(opt.Projection)
-		}
-		if opt.Sort != nil && sort == nil { // 只有在没有显式排序时才使用
-			findOptions.SetSort(opt.Sort)
-		}
-		if opt.Hint != nil {
-			findOptions.SetHint(opt.Hint)
-		}
-		if opt.Max != nil {
-			findOptions.SetMax(opt.Max)
-		}
-		if opt.Min != nil {
-			findOptions.SetMin(opt.Min)
-		}
-		// 可以根据需要添加更多选项
+	if len(sortOptions) > 0 {
+		findOptions.SetSort(sortOptions)
 	}
 
 	// 执行查询
-	cursor, err := coll.Find(ctx, filter, findOptions)
+	cursor, err := coll.Find(ctx, queryFilter, findOptions)
 	if err != nil {
 		return 0, fmt.Errorf("查询分页数据失败: %w", err)
 	}

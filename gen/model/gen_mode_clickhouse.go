@@ -9,7 +9,7 @@ import (
 	"text/template"
 	"time"
 
-	_ "github.com/ClickHouse/clickhouse-go/v2"
+	_ "gorm.io/driver/clickhouse"
 )
 
 // ClickHouseGenerator ClickHouse表结构生成器

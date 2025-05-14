@@ -199,10 +199,7 @@ func TestTiDBTransaction(t *testing.T) {
 	// 测试提交事务
 	t.Run("Commit", func(t *testing.T) {
 		// 开始事务
-		tx, err := db.Begin()
-		if err != nil {
-			t.Fatalf("开始事务失败: %v", err)
-		}
+		tx := db.Begin()
 
 		// 插入用户
 		result, err := tx.ExecWithResult(
@@ -253,10 +250,7 @@ func TestTiDBTransaction(t *testing.T) {
 	// 测试回滚事务
 	t.Run("Rollback", func(t *testing.T) {
 		// 开始事务
-		tx, err := db.Begin()
-		if err != nil {
-			t.Fatalf("开始事务失败: %v", err)
-		}
+		tx := db.Begin()
 
 		// 插入用户
 		result, err := tx.ExecWithResult(

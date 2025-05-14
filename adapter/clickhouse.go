@@ -191,32 +191,81 @@ func (c *ClickHouse) MergeInto(db *gorm.DB, table string, columns []string, valu
 	return db.Exec(sqlBuilder.String(), flatValues...).Error
 }
 
-func (c *ClickHouse) QueryPage(out interface{}, page, pageSize int, tableName string, filter interface{}, opts ...interface{}) (int64, error) {
+func (c *ClickHouse) QueryPage(dbOption interface{}, out interface{}, page, pageSize int, tableName string, orderBy []interface{}, filter ...interface{}) (int64, error) {
+	// 参数验证
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	if tableName == "" {
+		return 0, fmt.Errorf("表名不能为空")
+	}
+
+	// 从参数中提取 db
+	if dbOption == nil {
+		return 0, fmt.Errorf("缺少必要参数：数据库连接")
+	}
+	db, ok := dbOption.(*gorm.DB)
+	if !ok {
+		return 0, fmt.Errorf("数据库连接参数必须是 *gorm.DB 类型")
+	}
+
 	// 计算偏移量
 	offset := (page - 1) * pageSize
-
-	// 假设第一个opts是db *gorm.DB
-	if len(opts) == 0 {
-		return 0, fmt.Errorf("需要提供gorm.DB实例")
-	}
-
-	db, ok := opts[0].(*gorm.DB)
-	if !ok {
-		return 0, fmt.Errorf("第一个参数必须是*gorm.DB类型")
-	}
 
 	// 使用提供的表名
 	query := db.Table(tableName)
 
-	// 假设filter是查询条件
-	if filter != nil {
-		query = query.Where(filter)
+	// 处理排序
+	if len(orderBy) > 0 {
+		for _, order := range orderBy {
+			if orderStr, ok := order.(string); ok {
+				query = query.Order(orderStr)
+			}
+		}
+	}
+
+	// 处理查询条件
+	if len(filter) > 0 {
+		switch f := filter[0].(type) {
+		case nil:
+			// 不添加条件
+		case string:
+			// 如果是SQL字符串
+			if len(filter) > 1 {
+				query = query.Where(f, filter[1:]...)
+			} else {
+				query = query.Where(f)
+			}
+		case []interface{}:
+			// 如果是切片，处理第一个元素
+			if len(f) > 0 {
+				if sqlCond, ok := f[0].(string); ok {
+					// 第一个元素是SQL字符串
+					if len(f) > 1 {
+						query = query.Where(sqlCond, f[1:]...)
+					} else {
+						query = query.Where(sqlCond)
+					}
+				} else {
+					return 0, fmt.Errorf("切片的第一个元素必须是SQL字符串")
+				}
+			}
+		case map[string]interface{}:
+			// 如果是条件映射
+			query = query.Where(f)
+		default:
+			// 其他类型，尝试直接使用
+			query = query.Where(filter[0])
+		}
 	}
 
 	// 获取总记录数
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		return 0, err
+		return 0, fmt.Errorf("查询总记录数失败: %w", err)
 	}
 
 	// 如果没有记录，直接返回
@@ -226,7 +275,7 @@ func (c *ClickHouse) QueryPage(out interface{}, page, pageSize int, tableName st
 
 	// 执行分页查询
 	if err := query.Limit(pageSize).Offset(offset).Find(out).Error; err != nil {
-		return 0, err
+		return 0, fmt.Errorf("查询分页数据失败: %w", err)
 	}
 
 	return total, nil

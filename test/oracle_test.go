@@ -207,10 +207,7 @@ func TestOracleBatchInsert(t *testing.T) {
 	prepareOracleTestTables(t, db)
 
 	// 开始事务
-	tx, err := db.Begin()
-	if err != nil {
-		t.Fatalf("开始事务失败: %v", err)
-	}
+	tx := db.Begin()
 
 	// 批量插入用户
 	for i := 1; i <= 10; i++ {
@@ -228,7 +225,7 @@ func TestOracleBatchInsert(t *testing.T) {
 	}
 
 	// 提交事务
-	err = tx.Commit()
+	err := tx.Commit()
 	if err != nil {
 		t.Fatalf("提交事务失败: %v", err)
 	}
@@ -390,13 +387,10 @@ func TestOracleTransaction(t *testing.T) {
 	// 测试提交事务
 	t.Run("Commit", func(t *testing.T) {
 		// 开始事务
-		tx, err := db.Begin()
-		if err != nil {
-			t.Fatalf("开始事务失败: %v", err)
-		}
+		tx := db.Begin()
 
 		// 插入用户
-		err = tx.Exec(
+		err := tx.Exec(
 			"INSERT INTO USERS (USERNAME, EMAIL, AGE, ACTIVE) VALUES (:1, :2, :3, :4)",
 			"txuser1", "tx1@example.com", 25, 1,
 		)
@@ -446,13 +440,10 @@ func TestOracleTransaction(t *testing.T) {
 	// 测试回滚事务
 	t.Run("Rollback", func(t *testing.T) {
 		// 开始事务
-		tx, err := db.Begin()
-		if err != nil {
-			t.Fatalf("开始事务失败: %v", err)
-		}
+		tx := db.Begin()
 
 		// 插入用户
-		err = tx.Exec(
+		err := tx.Exec(
 			"INSERT INTO USERS (USERNAME, EMAIL, AGE, ACTIVE) VALUES (:1, :2, :3, :4)",
 			"txuser2", "tx2@example.com", 30, 1,
 		)
@@ -674,16 +665,13 @@ func TestOracleQueryBuilderTransaction(t *testing.T) {
 	prepareOracleTestTables(t, db)
 
 	// 开始事务
-	tx, err := db.Begin()
-	if err != nil {
-		t.Fatalf("开始事务失败: %v", err)
-	}
+	tx := db.Begin()
 
 	// 在事务中使用Query构建器
 	q := query.NewQuery(tx)
 
 	// 插入用户
-	err = tx.Exec(
+	err := tx.Exec(
 		"INSERT INTO USERS (USERNAME, EMAIL, AGE, ACTIVE) VALUES (:1, :2, :3, :4)",
 		"txbuilder", "txbuilder@example.com", 30, 1,
 	)

@@ -8,20 +8,18 @@ import (
 	"strings"
 	"sync"
 
-	oracle "github.com/seelly/gorm-oracle"
-	"go.mongodb.org/mongo-driver/mongo/options"
-
-	"gorm.io/driver/sqlite"
-
 	"github.com/gzorm/gosqlx/adapter"
-
+	oracle "github.com/seelly/gorm-oracle"
 	"gorm.io/driver/clickhouse"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlite"
 	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+// ==================== 数据库核心结构 ====================
 
 // Database 数据库操作核心结构
 type Database struct {
@@ -39,6 +37,97 @@ type Deadlock struct {
 	mutex sync.Mutex     // 互斥锁
 	locks map[string]int // 锁定的表
 }
+
+// ==================== 数据库管理器 ====================
+
+// DatabaseManager 数据库管理器
+type DatabaseManager struct {
+	configManager *ConfigManager
+	databases     map[string]*Database
+	mutex         sync.RWMutex
+}
+
+// NewDatabaseManager 创建数据库管理器
+func NewDatabaseManager(configManager *ConfigManager) *DatabaseManager {
+	return &DatabaseManager{
+		configManager: configManager,
+		databases:     make(map[string]*Database),
+	}
+}
+
+// GetDatabase 获取数据库连接
+func (m *DatabaseManager) GetDatabase(ctx *Context) (*Database, error) {
+	if ctx == nil {
+		return nil, errors.New("上下文不能为空")
+	}
+
+	// 构建数据库键
+	dbKey := fmt.Sprintf("%s_%s", ctx.Nick, ctx.Mode)
+
+	// 尝试从缓存获取
+	m.mutex.RLock()
+	if db, ok := m.databases[dbKey]; ok {
+		m.mutex.RUnlock()
+		return db, nil
+	}
+	m.mutex.RUnlock()
+
+	// 获取配置
+	env := "development" // 默认环境
+	dbName := ctx.Nick
+
+	// 如果是只读模式，尝试获取只读数据库配置
+	if ctx.IsReadOnly() {
+		readOnlyDBName := fmt.Sprintf("%s_readonly", dbName)
+		if _, ok := m.configManager.GetConfig(env, readOnlyDBName); ok {
+			dbName = readOnlyDBName
+		}
+	}
+
+	// 获取数据库配置
+	config, ok := m.configManager.GetConfig(env, dbName)
+	if !ok {
+		return nil, fmt.Errorf("找不到数据库配置: %s", dbName)
+	}
+
+	// 创建数据库连接
+	db, err := NewDatabase(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+
+	// 缓存数据库连接
+	m.mutex.Lock()
+	m.databases[dbKey] = db
+	m.mutex.Unlock()
+
+	return db, nil
+}
+
+// CloseAll 关闭所有数据库连接
+func (m *DatabaseManager) CloseAll() error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	var errs []string
+	for key, db := range m.databases {
+		if db.sqlDB != nil {
+			if err := db.sqlDB.Close(); err != nil {
+				errs = append(errs, fmt.Sprintf("关闭数据库(%s)失败: %v", key, err))
+			}
+		}
+	}
+
+	// 清空缓存
+	m.databases = make(map[string]*Database)
+
+	if len(errs) > 0 {
+		return errors.New(strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+// ==================== 数据库初始化与连接 ====================
 
 // NewDeadlock 创建新的死锁检测器
 func NewDeadlock(ctx *Context) *Deadlock {
@@ -200,26 +289,63 @@ func NewDatabase(ctx *Context, config *Config) (*Database, error) {
 	var adapterInstance adapter.Adapter
 	switch config.Type {
 	case MySQL:
-		adapterInstance = adapter.NewMySQL(config.Source)
+		adapterInstance = adapter.NewMySQL(config.Source).
+			WithMaxIdle(config.MaxIdle).
+			WithMaxOpen(config.MaxOpen).
+			WithMaxLifetime(config.MaxLifetime).
+			WithDebug(config.Debug)
 	case PostgresSQL:
-		adapterInstance = adapter.NewPostgres(config.Source)
-	case SQLite:
-		adapterInstance = adapter.NewSQLite(config.Source)
+		adapterInstance = adapter.NewPostgres(config.Source).
+			WithMaxIdle(config.MaxIdle).
+			WithMaxOpen(config.MaxOpen).
+			WithMaxLifetime(config.MaxLifetime).
+			WithDebug(config.Debug)
 	case SQLServer:
-		adapterInstance = adapter.NewSQLServer(config.Source)
+		adapterInstance = adapter.NewSQLServer(config.Source).
+			WithMaxIdle(config.MaxIdle).
+			WithMaxOpen(config.MaxOpen).
+			WithMaxLifetime(config.MaxLifetime).
+			WithDebug(config.Debug)
+	case SQLite:
+		adapterInstance = adapter.NewSQLite(config.Source).
+			WithMaxIdle(config.MaxIdle).
+			WithMaxOpen(config.MaxOpen).
+			WithMaxLifetime(config.MaxLifetime).
+			WithDebug(config.Debug)
 	case Oracle:
-		adapterInstance = adapter.NewOracle(config.Source)
+		adapterInstance = adapter.NewOracle(config.Source).
+			WithMaxIdle(config.MaxIdle).
+			WithMaxOpen(config.MaxOpen).
+			WithMaxLifetime(config.MaxLifetime).
+			WithDebug(config.Debug)
 	case TiDB:
-		adapterInstance = adapter.NewTiDB(config.Source)
-	case ClickHouse:
-		adapterInstance = adapter.NewClickHouse(config.Source)
+		adapterInstance = adapter.NewTiDB(config.Source).
+			WithMaxIdle(config.MaxIdle).
+			WithMaxOpen(config.MaxOpen).
+			WithMaxLifetime(config.MaxLifetime).
+			WithDebug(config.Debug)
 	case MariaDB:
-		adapterInstance = adapter.NewMariaDB(config.Source)
+		adapterInstance = adapter.NewMariaDB(config.Source).
+			WithMaxIdle(config.MaxIdle).
+			WithMaxOpen(config.MaxOpen).
+			WithMaxLifetime(config.MaxLifetime).
+			WithDebug(config.Debug)
+	case ClickHouse:
+		adapterInstance = adapter.NewClickHouse(config.Source).
+			WithMaxIdle(config.MaxIdle).
+			WithMaxOpen(config.MaxOpen).
+			WithMaxLifetime(config.MaxLifetime).
+			WithDebug(config.Debug)
 	case OceanBase:
-		adapterInstance = adapter.NewOceanBase(config.Source)
+		adapterInstance = adapter.NewOceanBase(config.Source).
+			WithMaxIdle(config.MaxIdle).
+			WithMaxOpen(config.MaxOpen).
+			WithMaxLifetime(config.MaxLifetime).
+			WithDebug(config.Debug)
 	default:
 		return nil, fmt.Errorf("不支持的数据库类型: %s", config.Type)
 	}
+
 	// 创建数据库操作实例
 	database := &Database{
 		db:       db,
@@ -259,43 +385,64 @@ func (d *Database) DSN() string {
 	}
 }
 
-// GetDBContext 获取数据库操作上下文
-func (d *Database) GetDBContext() *DBContext {
-	return NewDBContext(d.ctx, d.db, d.sqlDB)
+// ==================== 基础方法 ====================
+
+// DB 获取GORM数据库连接
+func (d *Database) DB() *gorm.DB {
+	return d.db
 }
 
-// Adapter 返回底层数据库适配器
-func (d *Database) Adapter() interface{} {
-	return d.adapter // 假设Database结构体中有adapter字段
-}
-
-// Close 关闭数据库连接
-func (d *Database) Close() error {
-	return d.sqlDB.Close()
+// SqlDB 获取原生SQL数据库连接
+func (d *Database) SqlDB() *sql.DB {
+	return d.sqlDB
 }
 
 // Ping 测试数据库连接
 func (d *Database) Ping() error {
+
 	return d.sqlDB.Ping()
 }
 
-// 表操作相关方法
-
-// Table 获取表操作对象
-func (d *Database) Table(name string) *gorm.DB {
-	return d.db.WithContext(d.ctx).Table(name)
+// Type 获取数据库类型
+func (d *Database) Type() DatabaseType {
+	return d.dbType
 }
 
-// Model 获取模型操作对象
+// Context 获取数据库上下文
+func (d *Database) Context() *Context {
+	return d.ctx
+}
+
+// Adapter 获取数据库适配器
+func (d *Database) Adapter() adapter.Adapter {
+	return d.adapter
+}
+
+// Model 设置模型
 func (d *Database) Model(value interface{}) *gorm.DB {
-	return d.db.WithContext(d.ctx).Model(value)
+	return d.db.Model(value)
 }
 
-// 查询相关方法
+// Table 设置表名
+func (d *Database) Table(name string) *gorm.DB {
+	return d.db.Table(name)
+}
+
+// ==================== 查询操作 ====================
 
 // First 查询第一条记录
 func (d *Database) First(out interface{}, where ...interface{}) error {
 	return d.Model(out).First(out, where...).Error
+}
+
+// FirstOrInit 查询第一条记录，如果不存在则初始化
+func (d *Database) FirstOrInit(out interface{}, where ...interface{}) error {
+	return d.Model(out).FirstOrInit(out, where...).Error
+}
+
+// FirstOrCreate 查询第一条记录，如果不存在则创建
+func (d *Database) FirstOrCreate(out interface{}, where ...interface{}) error {
+	return d.Model(out).FirstOrCreate(out, where...).Error
 }
 
 // Find 查询多条记录
@@ -303,17 +450,122 @@ func (d *Database) Find(out interface{}, where ...interface{}) error {
 	return d.Model(out).Find(out, where...).Error
 }
 
-// FindWhere 根据条件查询多条记录
-func (d *Database) FindWhere(out interface{}, where string, values ...interface{}) error {
-	return d.Model(out).Where(formatWhere(where), values...).Find(out).Error
+// FindInBatches 批量查询
+func (d *Database) FindInBatches(out interface{}, batchSize int, fc func(tx *gorm.DB, batch int) error) error {
+	return d.Model(out).FindInBatches(out, batchSize, fc).Error
 }
 
-// FindOrder 根据条件和排序查询多条记录
-func (d *Database) FindOrder(out interface{}, order, where string, values ...interface{}) error {
-	return d.Model(out).Where(formatWhere(where), values...).Order(order).Find(out).Error
+// Pluck 查询单个列
+func (d *Database) Pluck(column string, out interface{}) error {
+	return d.db.Pluck(column, out).Error
 }
 
-// 锁相关方法
+// Count 查询记录数
+func (d *Database) Count(out interface{}) (int64, error) {
+	var count int64
+	err := d.Model(out).Count(&count).Error
+	return count, err
+}
+
+// Exists 检查记录是否存在
+func (d *Database) Exists(model interface{}, where ...interface{}) (bool, error) {
+	var count int64
+	err := d.Model(model).Where(where[0], where[1:]...).Count(&count).Error
+	return count > 0, err
+}
+
+// Take 获取一条记录，不指定排序
+func (d *Database) Take(out interface{}, where ...interface{}) error {
+	return d.Model(out).Take(out, where...).Error
+}
+
+// Last 获取最后一条记录
+func (d *Database) Last(out interface{}, where ...interface{}) error {
+	return d.Model(out).Last(out, where...).Error
+}
+
+// Scan 将查询结果扫描到结构体
+func (d *Database) Scan(dest interface{}) error {
+	return d.db.Scan(dest).Error
+}
+
+// ScanRows 扫描行
+func (d *Database) ScanRows(rows *sql.Rows, dest interface{}) error {
+	return d.db.ScanRows(rows, dest)
+}
+
+// Query 执行查询并返回结果集(集合)
+func (d *Database) Query(query string, args ...interface{}) (*sql.Rows, error) {
+	rows, err := d.db.WithContext(d.ctx).Raw(query, args...).Rows()
+	return rows, err
+}
+
+// QueryRow 执行查询并返回单行结果
+func (d *Database) QueryRow(query string, args ...interface{}) *sql.Row {
+	row := d.db.WithContext(d.ctx).Raw(query, args...).Row()
+	return row
+}
+
+// QueryRows 查询多条记录
+func (d *Database) QueryRows(out interface{}, sqlStr string, values ...interface{}) error {
+	return d.Raw(sqlStr, values...).Scan(out).Error
+}
+
+// Raw 执行原生SQL查询
+func (d *Database) Raw(sql string, values ...interface{}) *gorm.DB {
+	return d.db.Raw(sql, values...)
+}
+
+// ScanRaw 执行原生查询并扫描结果
+func (d *Database) ScanRaw(out interface{}, sql string, values ...interface{}) error {
+	return d.Raw(sql, values...).Scan(out).Error
+}
+
+// Exec 执行原生SQL
+func (d *Database) Exec(sql string, values ...interface{}) error {
+	return d.db.Exec(sql, values...).Error
+}
+
+// ExecWithResult 执行原生SQL返回结果
+func (d *Database) ExecWithResult(sqlStr string, values ...interface{}) (sql.Result, error) {
+	// 使用原生SQL连接执行语句
+	return d.sqlDB.ExecContext(d.ctx, sqlStr, values...)
+}
+
+// QueryPage 分页查询
+func (d *Database) QueryPage(dbOption interface{}, out interface{}, page, pageSize int, tableName string, orderBy []interface{}, filter ...interface{}) (int64, error) {
+	// 使用适配器的分页查询
+	if d.adapter != nil {
+		if tableName == "" {
+			tableName = reflectTableName(out)
+		}
+
+		return d.adapter.QueryPage(dbOption, out, page, pageSize, tableName, orderBy, filter)
+	}
+
+	// 计算总数
+	var total int64
+	err := d.Model(out).Where(filter).Count(&total).Error
+	if err != nil {
+		return 0, err
+	}
+
+	// 如果总数为0，直接返回
+	if total == 0 {
+		return 0, nil
+	}
+
+	// 计算偏移量
+	offset := (page - 1) * pageSize
+
+	// 查询数据
+	err = d.Model(out).Where(filter).Offset(offset).Limit(pageSize).Find(out).Error
+	if err != nil {
+		return 0, err
+	}
+
+	return total, nil
+}
 
 // Lock 锁定记录
 func (d *Database) Lock(out interface{}, ids ...interface{}) error {
@@ -466,348 +718,102 @@ func (d *Database) LockMulti(out interface{}, where string, values ...interface{
 	return d.Model(out).Set("gorm:query_option", lockOption).Where(formatWhere(where), values...).Find(out).Error
 }
 
-// BatchInsert 批量插入记录
-func (d *Database) BatchInsert(table string, columns []string, values [][]interface{}) error {
-	if len(values) == 0 {
-		return nil
-	}
-
-	switch d.dbType {
-	case MySQL:
-		// MySQL 批量插入
-		var sqlBuilder strings.Builder
-		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
-
-		var placeholders []string
-		var flatValues []interface{}
-
-		for _, row := range values {
-			var rowPlaceholders []string
-			for range columns {
-				rowPlaceholders = append(rowPlaceholders, "?")
-			}
-			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
-			flatValues = append(flatValues, row...)
-		}
-		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
-
-		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
-
-	case TiDB:
-		// TiDB 与 MySQL 兼容，使用相同的批量插入语法
-		var sqlBuilder strings.Builder
-		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
-
-		var placeholders []string
-		var flatValues []interface{}
-
-		for _, row := range values {
-			var rowPlaceholders []string
-			for range columns {
-				rowPlaceholders = append(rowPlaceholders, "?")
-				flatValues = append(flatValues, row...)
-			}
-			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
-			flatValues = append(flatValues, row...)
-		}
-
-		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
-
-		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
-
-	case SQLServer:
-		// 使用 SQLServer 适配器的批量插入
-		adapterInstance := &adapter.SQLServer{}
-		return adapterInstance.BatchInsert(d.db, table, columns, values)
-
-	case Oracle:
-		// 使用 Oracle 适配器的批量插入
-		adapterInstance := &adapter.Oracle{}
-		return adapterInstance.BatchInsert(d.db, table, columns, values)
-
-	case PostgresSQL:
-		// PostgreSQL 批量插入
-		var sqlBuilder strings.Builder
-		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
-
-		var placeholders []string
-		var flatValues []interface{}
-
-		paramCount := 1
-		for _, row := range values {
-			var rowPlaceholders []string
-			for _, val := range row {
-				rowPlaceholders = append(rowPlaceholders, fmt.Sprintf("$%d", paramCount))
-				flatValues = append(flatValues, val)
-				paramCount++
-			}
-			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
-			flatValues = append(flatValues, row...)
-		}
-
-		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
-
-		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
-
-	case SQLite:
-		// SQLite 批量插入
-		var sqlBuilder strings.Builder
-		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
-
-		var placeholders []string
-		var flatValues []interface{}
-
-		for _, row := range values {
-			var rowPlaceholders []string
-			for range columns {
-				rowPlaceholders = append(rowPlaceholders, "?")
-				flatValues = append(flatValues, row...)
-			}
-			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
-			flatValues = append(flatValues, row...)
-		}
-
-		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
-
-		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
-
-	case MongoDB:
-		// MongoDB 批量插入
-		// 使用 MongoDB 适配器进行批量插入
-		if mongoAdapter, ok := d.adapter.(*adapter.MongoDB); ok {
-			// 将列和值转换为文档格式
-			docs := make([]interface{}, 0, len(values))
-			for _, row := range values {
-				doc := make(map[string]interface{})
-				for i, col := range columns {
-					if i < len(row) {
-						doc[col] = row[i]
-					}
-				}
-				docs = append(docs, doc)
-			}
-			_, err := mongoAdapter.InsertMany(table, docs)
-			return err
-		}
-		return errors.New("MongoDB适配器类型断言失败")
-	}
-
-	return errors.New("不支持的数据库类型")
-}
-
-// MergeInto 合并插入记录（UPSERT）
-func (d *Database) MergeInto(table string, columns []string, values [][]interface{}, keyColumns []string, updateColumns []string) error {
-	if len(values) == 0 || len(keyColumns) == 0 {
-		return nil
-	}
-
-	switch d.dbType {
-	case MySQL:
-		// MySQL UPSERT (INSERT ... ON DUPLICATE KEY UPDATE)
-		var sqlBuilder strings.Builder
-		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
-
-		var placeholders []string
-		var flatValues []interface{}
-
-		for _, row := range values {
-			var rowPlaceholders []string
-			for _, val := range row {
-				rowPlaceholders = append(rowPlaceholders, "?")
-				flatValues = append(flatValues, val)
-			}
-			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
-		}
-
-		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
-
-		if len(updateColumns) > 0 {
-			sqlBuilder.WriteString(" ON DUPLICATE KEY UPDATE ")
-			var updates []string
-			for _, col := range updateColumns {
-				updates = append(updates, fmt.Sprintf("%s = VALUES(%s)", col, col))
-			}
-			sqlBuilder.WriteString(strings.Join(updates, ", "))
-		}
-
-		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
-
-	case TiDB:
-		// TiDB 与 MySQL 兼容，使用相同的 UPSERT 语法
-		var sqlBuilder strings.Builder
-		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
-
-		var placeholders []string
-		var flatValues []interface{}
-
-		for _, row := range values {
-			var rowPlaceholders []string
-			for _, val := range row {
-				rowPlaceholders = append(rowPlaceholders, "?")
-				flatValues = append(flatValues, val)
-			}
-			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
-		}
-
-		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
-
-		if len(updateColumns) > 0 {
-			sqlBuilder.WriteString(" ON DUPLICATE KEY UPDATE ")
-			var updates []string
-			for _, col := range updateColumns {
-				updates = append(updates, fmt.Sprintf("%s = VALUES(%s)", col, col))
-			}
-			sqlBuilder.WriteString(strings.Join(updates, ", "))
-		}
-
-		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
-
-	case SQLServer:
-		// 使用 SQLServer 适配器的 MERGE INTO
-		adapterInstance := &adapter.SQLServer{}
-		return adapterInstance.MergeInto(d.db, table, columns, values, keyColumns, updateColumns)
-
-	case Oracle:
-		// 使用 Oracle 适配器的 MERGE INTO
-		adapterInstance := &adapter.Oracle{}
-		return adapterInstance.MergeInto(d.db, table, columns, values, keyColumns, updateColumns)
-
-	case PostgresSQL:
-		// PostgreSQL UPSERT (INSERT ... ON CONFLICT ... DO UPDATE)
-		var sqlBuilder strings.Builder
-		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
-
-		var placeholders []string
-		var flatValues []interface{}
-
-		paramCount := 1
-		for _, row := range values {
-			var rowPlaceholders []string
-			for _, val := range row {
-				rowPlaceholders = append(rowPlaceholders, fmt.Sprintf("$%d", paramCount))
-				flatValues = append(flatValues, val)
-				paramCount++
-			}
-			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
-		}
-
-		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
-
-		if len(updateColumns) > 0 && len(keyColumns) > 0 {
-			sqlBuilder.WriteString(fmt.Sprintf(" ON CONFLICT (%s) DO UPDATE SET ", strings.Join(keyColumns, ", ")))
-			var updates []string
-			for _, col := range updateColumns {
-				updates = append(updates, fmt.Sprintf("%s = EXCLUDED.%s", col, col))
-			}
-			sqlBuilder.WriteString(strings.Join(updates, ", "))
-		}
-
-		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
-
-	case SQLite:
-		// SQLite 3.24.0 及以上版本支持 UPSERT
-		var sqlBuilder strings.Builder
-		sqlBuilder.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES ", table, strings.Join(columns, ", ")))
-
-		var placeholders []string
-		var flatValues []interface{}
-
-		for _, row := range values {
-			var rowPlaceholders []string
-			for _, val := range row {
-				rowPlaceholders = append(rowPlaceholders, "?")
-				flatValues = append(flatValues, val)
-			}
-			placeholders = append(placeholders, fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", ")))
-		}
-
-		sqlBuilder.WriteString(strings.Join(placeholders, ", "))
-
-		if len(updateColumns) > 0 && len(keyColumns) > 0 {
-			sqlBuilder.WriteString(fmt.Sprintf(" ON CONFLICT (%s) DO UPDATE SET ", strings.Join(keyColumns, ", ")))
-			var updates []string
-			for _, col := range updateColumns {
-				updates = append(updates, fmt.Sprintf("%s = excluded.%s", col, col))
-			}
-			sqlBuilder.WriteString(strings.Join(updates, ", "))
-		}
-
-		return d.db.Exec(sqlBuilder.String(), flatValues...).Error
-
-	case MongoDB:
-		// MongoDB 使用 upsert 操作
-		if mongoAdapter, ok := d.adapter.(*adapter.MongoDB); ok {
-			// 将列和值转换为文档格式
-			docs := make([]interface{}, 0, len(values))
-			for _, row := range values {
-				doc := make(map[string]interface{})
-				for i, col := range columns {
-					if i < len(row) {
-						doc[col] = row[i]
-					}
-				}
-				docs = append(docs, doc)
-			}
-
-			// 构建查询条件（基于键列）
-			filter := make(map[string]interface{})
-			for _, keyCol := range keyColumns {
-				filter[keyCol] = 1 // 使用键列作为过滤条件
-			}
-
-			// 创建 UpdateOptions 并设置 Upsert 为 true
-			updateOpts := options.Update().SetUpsert(true)
-
-			// 执行 upsert 操作
-			_, err := mongoAdapter.UpdateMany(table, filter, docs, updateOpts)
-			return err
-		}
-		return errors.New("MongoDB适配器类型断言失败")
-	}
-
-	return errors.New("不支持的数据库类型")
-}
+// ==================== 插入操作 ====================
 
 // Create 创建记录
 func (d *Database) Create(value interface{}) error {
-	return d.db.WithContext(d.ctx).Create(value).Error
+	return d.db.Create(value).Error
+}
+
+// CreateInBatches 批量创建记录
+func (d *Database) CreateInBatches(value interface{}, batchSize int) error {
+	return d.db.CreateInBatches(value, batchSize).Error
 }
 
 // Save 保存记录
 func (d *Database) Save(value interface{}) error {
-	return d.db.WithContext(d.ctx).Save(value).Error
+	return d.db.Save(value).Error
 }
+
+// BatchInsert 批量插入
+func (d *Database) BatchInsert(table string, columns []string, values [][]interface{}) error {
+	if d.adapter != nil {
+		return d.adapter.BatchInsert(d.db, table, columns, values)
+	}
+	return errors.New("数据库适配器不支持批量插入")
+}
+
+// MergeInto 合并插入（UPSERT）
+func (d *Database) MergeInto(table string, columns []string, values [][]interface{}, keyColumns []string, updateColumns []string) error {
+	if d.adapter != nil {
+		return d.adapter.MergeInto(d.db, table, columns, values, keyColumns, updateColumns)
+	}
+	return errors.New("数据库适配器不支持合并插入")
+}
+
+// ==================== 更新操作 ====================
 
 // Update 更新记录
-func (d *Database) Update(value interface{}, attrs ...interface{}) error {
-	return d.Model(value).Updates(attrs).Error
+func (d *Database) Update(model interface{}, column string, value interface{}) error {
+	return d.Model(model).Update(column, value).Error
 }
 
-// UpdateMap 使用Map更新记录
-func (d *Database) UpdateMap(value interface{}, attrs map[string]interface{}) error {
-	return d.Model(value).Updates(attrs).Error
+// Updates 批量更新记录
+func (d *Database) Updates(model interface{}, values interface{}) error {
+	return d.Model(model).Updates(values).Error
 }
+
+// UpdateColumn 更新列
+func (d *Database) UpdateColumn(model interface{}, column string, value interface{}) error {
+	return d.Model(model).UpdateColumn(column, value).Error
+}
+
+// UpdateColumns 批量更新列
+func (d *Database) UpdateColumns(model interface{}, values interface{}) error {
+	return d.Model(model).UpdateColumns(values).Error
+}
+
+// ==================== 删除操作 ====================
 
 // Delete 删除记录
 func (d *Database) Delete(value interface{}, where ...interface{}) error {
-	return d.db.WithContext(d.ctx).Delete(value, where...).Error
+	return d.db.Delete(value, where...).Error
 }
 
-// 事务相关方法
-// Begin 开始一个新事务
-func (d *Database) Begin() (*Database, error) {
-	tx := d.db.WithContext(d.ctx).Begin()
-	if tx.Error != nil {
-		return nil, tx.Error
-	}
+// Unscoped 不使用软删除
+func (d *Database) Unscoped() *gorm.DB {
+	return d.db.Unscoped()
+}
 
+// ==================== 事务操作 ====================
+
+// Transaction 执行事务
+func (d *Database) Transaction(fc func(tx *Database) error) error {
+	return d.db.Transaction(func(tx *gorm.DB) error {
+		// 创建事务数据库
+		txDB := &Database{
+			db:       tx,
+			sqlDB:    d.sqlDB,
+			dbType:   d.dbType,
+			deadlock: d.deadlock,
+			ctx:      d.ctx,
+			adapter:  d.adapter,
+		}
+		return fc(txDB)
+	})
+}
+
+// Begin 开始事务
+func (d *Database) Begin() *Database {
+	tx := d.db.Begin()
 	return &Database{
 		db:       tx,
 		sqlDB:    d.sqlDB,
 		dbType:   d.dbType,
 		deadlock: d.deadlock,
 		ctx:      d.ctx,
-	}, nil
+		adapter:  d.adapter,
+	}
 }
 
 // Commit 提交事务
@@ -820,103 +826,7 @@ func (d *Database) Rollback() error {
 	return d.db.Rollback().Error
 }
 
-// Transaction 执行事务
-func (d *Database) Transaction(fn func(tx *Database) error) error {
-	return d.db.WithContext(d.ctx).Transaction(func(tx *gorm.DB) error {
-		txDB := &Database{
-			db:       tx,
-			sqlDB:    d.sqlDB,
-			dbType:   d.dbType,
-			deadlock: d.deadlock,
-			ctx:      d.ctx,
-		}
-		return fn(txDB)
-	})
-}
-
-// 原生SQL相关方法
-
-// Exec 执行原生SQL
-func (d *Database) Exec(sql string, values ...interface{}) error {
-	return d.db.WithContext(d.ctx).Exec(sql, values...).Error
-}
-
-// ExecWithResult 执行原生SQL返回结果
-func (d *Database) ExecWithResult(sqlStr string, values ...interface{}) (sql.Result, error) {
-	// 使用原生SQL连接执行语句
-	return d.sqlDB.ExecContext(d.ctx, sqlStr, values...)
-}
-
-// Raw 执行原生查询
-func (d *Database) Raw(sql string, values ...interface{}) *gorm.DB {
-	return d.db.WithContext(d.ctx).Raw(sql, values...)
-}
-
-// ScanRaw 执行原生查询并扫描结果
-func (d *Database) ScanRaw(out interface{}, sql string, values ...interface{}) error {
-	return d.Raw(sql, values...).Scan(out).Error
-}
-
-// Query 执行查询并返回结果集(集合)
-func (d *Database) Query(query string, args ...interface{}) (*sql.Rows, error) {
-	rows, err := d.db.WithContext(d.ctx).Raw(query, args...).Rows()
-	return rows, err
-}
-
-// QueryRow 执行查询并返回单行结果
-func (d *Database) QueryRow(query string, args ...interface{}) *sql.Row {
-	row := d.db.WithContext(d.ctx).Raw(query, args...).Row()
-	return row
-}
-
-// QueryRows 查询多条记录
-func (d *Database) QueryRows(out interface{}, sqlStr string, values ...interface{}) error {
-	return d.Raw(sqlStr, values...).Scan(out).Error
-}
-
-// QueryPage 分页查询
-// out: 输出结果
-// page: 页码（从1开始）
-// pageSize: 每页记录数
-// filter: 过滤条件（可以是SQL字符串或条件映射）
-// opts: 可选参数，第一个参数通常是数据库连接
-func (d *Database) QueryPage(out interface{}, page, pageSize int, tableName string, filter interface{}, opts ...interface{}) (int64, error) {
-	// 将数据库连接作为第一个可选参数传递给适配器
-	newOpts := make([]interface{}, 0, len(opts)+1)
-	newOpts = append(newOpts, d.db)
-	newOpts = append(newOpts, opts...)
-
-	// 根据数据库类型调用相应适配器的分页方法
-	return d.adapter.QueryPage(out, page, pageSize, tableName, filter, newOpts...)
-}
-
-// Count 计数查询
-func (d *Database) Count(out interface{}) (int64, error) {
-	var count int64
-	err := d.Model(out).Count(&count).Error
-	return count, err
-}
-
-// CountWhere 条件计数查询
-func (d *Database) CountWhere(out interface{}, where string, values ...interface{}) (int64, error) {
-	var count int64
-	err := d.Model(out).Where(formatWhere(where), values...).Count(&count).Error
-	return count, err
-}
-
-// 批量操作相关方法
-
-// BatchCreate 批量创建记录
-func (d *Database) BatchCreate(values interface{}) error {
-	return d.db.WithContext(d.ctx).CreateInBatches(values, 100).Error
-}
-
-func (db *Database) DB() interface{} {
-	return db.db // 假设内部有一个 db 字段存储底层连接
-}
-
-// 辅助函数
-
+// ==================== 辅助函数 ====================
 // formatWhere 格式化WHERE条件
 func formatWhere(where string) string {
 	if strings.HasPrefix(where, "AND ") {
@@ -926,107 +836,77 @@ func formatWhere(where string) string {
 }
 
 // reflectTableName 反射获取表名
-func reflectTableName(out interface{}) string {
-	t := reflect.TypeOf(out)
-
-	// 处理字符串类型
-	if t.Kind() == reflect.String {
-		return out.(string)
+func reflectTableName(value interface{}) string {
+	if value == nil {
+		return ""
 	}
 
-	// 处理指针类型
+	t := reflect.TypeOf(value)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
 
-	// 处理结构体类型
-	if t.Kind() == reflect.Struct {
-		// 尝试使用GORM的表名推断
-		if tabler, ok := out.(interface{ TableName() string }); ok {
-			return tabler.TableName()
-		}
-
-		// 使用类型名作为表名
-		parts := strings.Split(t.String(), ".")
-		return parts[len(parts)-1]
-	}
-
-	// 处理切片类型
 	if t.Kind() == reflect.Slice {
 		t = t.Elem()
 		if t.Kind() == reflect.Ptr {
 			t = t.Elem()
 		}
-		parts := strings.Split(t.String(), ".")
-		return parts[len(parts)-1]
+	}
+
+	// 尝试获取表名
+	if t.Kind() == reflect.Struct {
+		// 尝试调用TableName方法
+		v := reflect.New(t)
+		if method := v.MethodByName("TableName"); method.IsValid() {
+			if result := method.Call(nil); len(result) > 0 {
+				if tableName, ok := result[0].Interface().(string); ok {
+					return tableName
+				}
+			}
+		}
+		// 使用结构体名作为表名
+		return t.Name()
 	}
 
 	return ""
 }
 
-// reflectKeys 反射获取主键条件
-func reflectKeys(out interface{}) string {
-	// 这里简化处理，假设主键为id
-	// 在实际应用中，应该通过反射或GORM的API获取真实的主键
-	return "id = ?"
+// reflectKeys 反射获取主键
+func reflectKeys(value interface{}) interface{} {
+	if value == nil {
+		return nil
+	}
+
+	t := reflect.TypeOf(value)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	if t.Kind() == reflect.Slice {
+		t = t.Elem()
+		if t.Kind() == reflect.Ptr {
+			t = t.Elem()
+		}
+	}
+
+	// 尝试获取主键
+	if t.Kind() == reflect.Struct {
+		// 默认使用ID字段作为主键
+		for i := 0; i < t.NumField(); i++ {
+			field := t.Field(i)
+			if field.Name == "ID" || field.Name == "Id" || field.Name == "id" {
+				return field.Name
+			}
+		}
+	}
+
+	return "id" // 默认主键名
 }
 
-// DatabaseManager 数据库管理器
-type DatabaseManager struct {
-	configManager *ConfigManager
-	databases     map[string]*Database
-	mutex         sync.RWMutex
-}
-
-// NewDatabaseManager 创建数据库管理器
-func NewDatabaseManager(configManager *ConfigManager) *DatabaseManager {
-	return &DatabaseManager{
-		configManager: configManager,
-		databases:     make(map[string]*Database),
+// Close 关闭数据库连接
+func (d *Database) Close() error {
+	if d.sqlDB != nil {
+		return d.sqlDB.Close()
 	}
-}
-
-// GetDatabase 获取数据库连接
-func (m *DatabaseManager) GetDatabase(ctx *Context) (*Database, error) {
-	key := fmt.Sprintf("%s:%s", ctx.Nick, ctx.Mode)
-
-	// 先尝试从缓存获取
-	m.mutex.RLock()
-	db, ok := m.databases[key]
-	m.mutex.RUnlock()
-
-	if ok {
-		return db, nil
-	}
-
-	// 缓存中没有，创建新连接
-	config, ok := m.configManager.GetConfig("default", ctx.Nick)
-	if !ok {
-		return nil, fmt.Errorf("找不到数据库配置: %s", ctx.Nick)
-	}
-
-	// 创建新的数据库连接
-	db, err := NewDatabase(ctx, config)
-	if err != nil {
-		return nil, err
-	}
-
-	// 添加到缓存
-	m.mutex.Lock()
-	m.databases[key] = db
-	m.mutex.Unlock()
-
-	return db, nil
-}
-
-// CloseAll 关闭所有数据库连接
-func (m *DatabaseManager) CloseAll() {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	for _, db := range m.databases {
-		_ = db.Close()
-	}
-
-	m.databases = make(map[string]*Database)
+	return nil
 }

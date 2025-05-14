@@ -679,7 +679,7 @@ func (s *SQLServer) RestoreDatabase(db *gorm.DB, database, backupFile string) er
 }
 
 // QueryPage 分页查询
-func (s *SQLServer) QueryPage(out interface{}, page, pageSize int, tableName string, filter interface{}, opts ...interface{}) (int64, error) {
+func (s *SQLServer) QueryPage(dbOption interface{}, out interface{}, page, pageSize int, tableName string, orderBy []interface{}, filter ...interface{}) (int64, error) {
 	// 参数验证
 	if page <= 0 {
 		page = 1
@@ -691,58 +691,89 @@ func (s *SQLServer) QueryPage(out interface{}, page, pageSize int, tableName str
 		return 0, fmt.Errorf("表名不能为空")
 	}
 
-	// 从 opts 中提取 db 和其他参数
-	if len(opts) == 0 {
+	// 从参数中提取 db
+	if dbOption == nil {
 		return 0, fmt.Errorf("缺少必要参数：数据库连接")
 	}
-
-	db, ok := opts[0].(*gorm.DB)
+	db, ok := dbOption.(*gorm.DB)
 	if !ok {
-		return 0, fmt.Errorf("第一个可选参数必须是 *gorm.DB 类型")
+		return 0, fmt.Errorf("数据库连接参数必须是 *gorm.DB 类型")
 	}
 
-	// 处理 filter 参数
+	// 处理查询条件和参数
 	var sqlStr string
 	var values []interface{}
+	var orderClause string
+	var hasOrder bool = false
+	// 处理排序
+	if len(orderBy) > 0 {
+		var orders []string
+		for _, order := range orderBy {
+			if orderStr, ok := order.(string); ok {
+				orders = append(orders, orderStr)
+			}
+		}
+		if len(orders) > 0 {
+			orderClause = " ORDER BY " + strings.Join(orders, ", ")
+		}
+	}
 
-	switch f := filter.(type) {
-	case nil:
-		// 如果 filter 是 nil，构建基本查询
+	// 处理查询条件
+	if len(filter) == 0 {
+		// 没有查询条件，构建基本查询
 		sqlStr = fmt.Sprintf("SELECT * FROM %s", tableName)
-		//把 opts[1:] 作为参数加到 values
-		if len(opts) > 1 {
-			for _, v := range opts[1:] {
+	} else if len(filter) == 1 {
+		// 单个查询条件
+		switch f := filter[0].(type) {
+		case nil:
+			sqlStr = fmt.Sprintf("SELECT * FROM %s", tableName)
+		case string:
+			// 如果是SQL字符串
+			sqlStr = f
+			// 提取剩余的参数
+			if len(filter) > 1 {
+				values = append(values, filter[1:]...)
+			}
+		case []interface{}:
+			// 如果是切片，处理第一个元素
+			if len(f) > 0 {
+				if sqlCond, ok := f[0].(string); ok {
+					sqlStr = sqlCond
+					// 提取剩余的参数
+					if len(f) > 1 {
+						values = append(values, f[1:]...)
+					}
+				} else {
+					return 0, fmt.Errorf("切片的第一个元素必须是SQL字符串")
+				}
+			} else {
+				sqlStr = fmt.Sprintf("SELECT * FROM %s", tableName)
+			}
+		case map[string]interface{}:
+			// 如果是条件映射
+			var conditions []string
+			for k, v := range f {
+				conditions = append(conditions, fmt.Sprintf("%s = @p%d", k, len(values)+1))
 				values = append(values, v)
 			}
-		}
-	case string:
-		// 如果 filter 是 SQL 字符串
-		sqlStr = f
-		// 提取剩余的参数作为 values
-		if len(opts) > 1 {
-			for _, v := range opts[1:] {
-				values = append(values, v)
+
+			baseSQL := fmt.Sprintf("SELECT * FROM %s", tableName)
+			if len(conditions) > 0 {
+				sqlStr = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
+			} else {
+				sqlStr = baseSQL
 			}
+		default:
+			return 0, fmt.Errorf("不支持的查询条件类型")
 		}
-	case map[string]interface{}:
-		// 如果 filter 是条件映射，构建 WHERE 子句
-		// 这里简单实现，实际应用中可能需要更复杂的处理
-		var conditions []string
-		for k, v := range f {
-			conditions = append(conditions, fmt.Sprintf("%s = @p%d", k, len(values)+1))
-			values = append(values, v)
-		}
-
-		// 使用提供的表名
-		baseSQL := fmt.Sprintf("SELECT * FROM %s", tableName)
-
-		if len(conditions) > 0 {
-			sqlStr = fmt.Sprintf("%s WHERE %s", baseSQL, strings.Join(conditions, " AND "))
+	} else {
+		// 多个查询条件，第一个是SQL字符串，后面的是参数
+		if sqlCond, ok := filter[0].(string); ok {
+			sqlStr = sqlCond
+			values = append(values, filter[1:]...)
 		} else {
-			sqlStr = baseSQL
+			return 0, fmt.Errorf("多参数查询时，第一个参数必须是SQL字符串")
 		}
-	default:
-		return 0, fmt.Errorf("不支持的过滤条件类型")
 	}
 
 	// 检查 SQL 语句是否包含 SELECT 和 FROM 关键字
@@ -756,6 +787,7 @@ func (s *SQLServer) QueryPage(out interface{}, page, pageSize int, tableName str
 	} else {
 		// 检查 SQL 语句是否包含 WHERE 子句
 		hasWhere := strings.Contains(strings.ToUpper(sqlStr), " WHERE ")
+		hasOrder = strings.Contains(strings.ToUpper(sqlStr), " ORDER BY ")
 
 		// 如果没有 WHERE 子句，但有条件需要添加
 		if !hasWhere {
@@ -763,7 +795,7 @@ func (s *SQLServer) QueryPage(out interface{}, page, pageSize int, tableName str
 			fromIndex := strings.Index(strings.ToUpper(sqlStr), " FROM ")
 			if fromIndex >= 0 {
 				// 查找可能的子句位置
-				clauseKeywords := []string{" ORDER BY ", " GROUP BY ", " HAVING "}
+				clauseKeywords := []string{" ORDER BY ", " GROUP BY ", " HAVING ", " OFFSET "}
 				insertPos := len(sqlStr)
 
 				for _, keyword := range clauseKeywords {
@@ -776,6 +808,24 @@ func (s *SQLServer) QueryPage(out interface{}, page, pageSize int, tableName str
 				// 插入 WHERE 子句
 				sqlStr = sqlStr[:insertPos] + " WHERE 1=1" + sqlStr[insertPos:]
 			}
+		}
+
+		// 如果没有 ORDER BY 子句，但有排序需要添加
+		if !hasOrder && orderClause != "" {
+			// 查找可能的子句位置
+			clauseKeywords := []string{" OFFSET "}
+			insertPos := len(sqlStr)
+
+			for _, keyword := range clauseKeywords {
+				pos := strings.Index(strings.ToUpper(sqlStr), keyword)
+				if pos >= 0 && pos < insertPos {
+					insertPos = pos
+				}
+			}
+
+			// 插入 ORDER BY 子句
+			sqlStr = sqlStr[:insertPos] + orderClause + sqlStr[insertPos:]
+			hasOrder = true
 		}
 	}
 
@@ -810,8 +860,8 @@ func (s *SQLServer) QueryPage(out interface{}, page, pageSize int, tableName str
 		}
 	}
 
-	// 生成随机别名以避免冲突
-	randomAlias := fmt.Sprintf("count_table_%d", time.Now().UnixNano()%10000)
+	// 使用固定别名以避免冲突
+	const countTableAlias = "count_table"
 
 	if !isComplexQuery {
 		// 对于简单查询，直接从表中计数
@@ -825,18 +875,32 @@ func (s *SQLServer) QueryPage(out interface{}, page, pageSize int, tableName str
 			if strings.Contains(strings.ToUpper(fromPart), "(SELECT ") ||
 				strings.Contains(strings.ToUpper(fromPart), "( SELECT ") {
 				// 如果 FROM 部分包含子查询，使用子查询方式
-				countSQL = fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS %s", sqlStr, randomAlias)
+				countSQL = fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS %s", sqlStr, countTableAlias)
 			} else {
 				// 否则直接使用 FROM 部分
 				countSQL = "SELECT COUNT(*)" + fromPart
 			}
 		} else {
 			// 如果无法解析，回退到子查询方式
-			countSQL = fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS %s", sqlStr, randomAlias)
+			countSQL = fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS %s", sqlStr, countTableAlias)
 		}
 	} else {
 		// 对于复杂查询，使用子查询
-		countSQL = fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS %s", sqlStr, randomAlias)
+		countSQL = fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS %s", sqlStr, countTableAlias)
+	}
+
+	// 移除 ORDER BY 子句以提高计数查询性能
+	orderByIndex := strings.Index(strings.ToUpper(countSQL), " ORDER BY ")
+	if orderByIndex > 0 {
+		// 查找 ORDER BY 后面可能的 OFFSET 或结束位置
+		offsetIndex := strings.Index(strings.ToUpper(countSQL[orderByIndex:]), " OFFSET ")
+		if offsetIndex > 0 {
+			// 有 OFFSET 子句，移除 ORDER BY 到 OFFSET 之间的部分
+			countSQL = countSQL[:orderByIndex] + countSQL[orderByIndex+offsetIndex:]
+		} else {
+			// 没有 OFFSET 子句，直接移除 ORDER BY 到结束
+			countSQL = countSQL[:orderByIndex]
+		}
 	}
 
 	err := db.Raw(countSQL, values...).Count(&total).Error
@@ -851,7 +915,11 @@ func (s *SQLServer) QueryPage(out interface{}, page, pageSize int, tableName str
 
 	// 查询分页数据
 	// SQL Server 2012+ 使用 OFFSET-FETCH 语法
-	pageSQL := fmt.Sprintf("%s ORDER BY (SELECT NULL) OFFSET %d ROWS FETCH NEXT %d ROWS ONLY", sqlStr, offset, pageSize)
+	// 如果没有 ORDER BY 子句，需要添加一个默认的排序，因为 OFFSET-FETCH 需要 ORDER BY
+	if !hasOrder {
+		sqlStr = sqlStr + " ORDER BY (SELECT NULL)"
+	}
+	pageSQL := fmt.Sprintf("%s OFFSET %d ROWS FETCH NEXT %d ROWS ONLY", sqlStr, offset, pageSize)
 	err = db.Raw(pageSQL, values...).Scan(out).Error
 	if err != nil {
 		return 0, fmt.Errorf("查询分页数据失败: %w", err)

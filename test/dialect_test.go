@@ -2,6 +2,7 @@ package test
 
 import (
 	"fmt"
+
 	"log"
 
 	"github.com/gzorm/gosqlx"

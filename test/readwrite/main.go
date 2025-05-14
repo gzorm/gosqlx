@@ -360,10 +360,7 @@ func useTransactionWithReadWriteSeparation(manager *gosqlx.DatabaseManager) {
 	}
 
 	// 开始事务
-	tx, err := db.Begin()
-	if err != nil {
-		log.Fatalf("开始事务失败: %v", err)
-	}
+	tx := db.Begin()
 
 	// 执行事务操作
 	err = tx.Exec("INSERT INTO users (username, email) VALUES (?, ?)", "txuser", "tx@example.com")

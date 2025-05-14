@@ -203,10 +203,7 @@ func TestPostgresBatchInsert(t *testing.T) {
 	//preparePgTestTables(t, db)
 
 	// 开始事务
-	tx, err := db.Begin()
-	if err != nil {
-		t.Fatalf("开始事务失败: %v", err)
-	}
+	tx := db.Begin()
 
 	// 批量插入用户
 	for i := 1; i <= 10; i++ {
@@ -224,7 +221,7 @@ func TestPostgresBatchInsert(t *testing.T) {
 	}
 
 	// 提交事务
-	err = tx.Commit()
+	err := tx.Commit()
 	if err != nil {
 		t.Fatalf("提交事务失败: %v", err)
 	}
@@ -376,14 +373,11 @@ func TestPostgresTransaction(t *testing.T) {
 	// 测试提交事务
 	t.Run("Commit", func(t *testing.T) {
 		// 开始事务
-		tx, err := db.Begin()
-		if err != nil {
-			t.Fatalf("开始事务失败: %v", err)
-		}
+		tx := db.Begin()
 
 		// 插入用户
 		var userID int64
-		err = tx.QueryRow(
+		err := tx.QueryRow(
 			"INSERT INTO users (username, email, age, active) VALUES ($1, $2, $3, $4) RETURNING id",
 			"txuser1", "tx1@example.com", 25, true,
 		).Scan(&userID)
@@ -425,14 +419,11 @@ func TestPostgresTransaction(t *testing.T) {
 	// 测试回滚事务
 	t.Run("Rollback", func(t *testing.T) {
 		// 开始事务
-		tx, err := db.Begin()
-		if err != nil {
-			t.Fatalf("开始事务失败: %v", err)
-		}
+		tx := db.Begin()
 
 		// 插入用户
 		var userID int64
-		err = tx.QueryRow(
+		err := tx.QueryRow(
 			"INSERT INTO users (username, email, age, active) VALUES ($1, $2, $3, $4) RETURNING id",
 			"txuser2", "tx2@example.com", 30, true,
 		).Scan(&userID)
@@ -693,17 +684,14 @@ func TestPostgresQueryBuilderTransaction(t *testing.T) {
 	preparePgTestTables(t, db)
 
 	// 开始事务
-	tx, err := db.Begin()
-	if err != nil {
-		t.Fatalf("开始事务失败: %v", err)
-	}
+	tx := db.Begin()
 
 	// 在事务中使用Query构建器
 	q := query.NewQuery(tx)
 
 	// 插入用户
 	var userID int64
-	err = tx.QueryRow(
+	err := tx.QueryRow(
 		"INSERT INTO users (username, email, age, active) VALUES ($1, $2, $3, $4) RETURNING id",
 		"txbuilder", "txbuilder@example.com", 30, true,
 	).Scan(&userID)

@@ -421,10 +421,7 @@ func TestOceanBaseTransaction(t *testing.T) {
 	prepareOceanBaseTestTables(t, db)
 
 	// 开始事务
-	tx, err := db.Begin()
-	if err != nil {
-		t.Fatalf("开始事务失败: %v", err)
-	}
+	tx := db.Begin()
 
 	// 在事务中执行插入
 	user := &User{
@@ -436,7 +433,7 @@ func TestOceanBaseTransaction(t *testing.T) {
 		UpdatedAt: time.Now(),
 	}
 
-	_, err = tx.ExecWithResult(
+	_, err := tx.ExecWithResult(
 		"INSERT INTO users (username, email, age, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
 		user.Username, user.Email, user.Age, user.Active, user.CreatedAt, user.UpdatedAt,
 	)
@@ -463,10 +460,7 @@ func TestOceanBaseTransaction(t *testing.T) {
 	}
 
 	// 测试事务回滚
-	tx, err = db.Begin()
-	if err != nil {
-		t.Fatalf("开始第二个事务失败: %v", err)
-	}
+	tx = db.Begin()
 
 	rollbackUser := &User{
 		Username:  "rollbackuser",
@@ -534,10 +528,7 @@ func TestOceanBaseForUpdate(t *testing.T) {
 	}
 
 	// 开始事务
-	tx, err := db.Begin()
-	if err != nil {
-		t.Fatalf("开始事务失败: %v", err)
-	}
+	tx := db.Begin()
 
 	// 获取 OceanBase 适配器
 	oceanbaseAdapter, ok := db.Adapter().(*adapter.OceanBase)
@@ -559,11 +550,11 @@ func TestOceanBaseForUpdate(t *testing.T) {
 	updateCompleted := make(chan bool)
 	go func() {
 		// 创建新的连接
-		db2 := initOceanBase(t)
-		defer db2.Close()
+		db := initOceanBase(t)
+		defer db.Close()
 
 		// 尝试更新被锁定的行
-		_, err := db2.ExecWithResult(
+		_, err := db.ExecWithResult(
 			"UPDATE users SET email = ? WHERE id = ?",
 			"updated@example.com", userID,
 		)

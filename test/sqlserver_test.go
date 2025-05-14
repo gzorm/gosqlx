@@ -3,6 +3,7 @@ package test
 import (
 	"context"
 	"fmt"
+
 	"testing"
 	"time"
 
@@ -208,10 +209,7 @@ func TestSQLServerBatchInsert(t *testing.T) {
 	prepareSQLServerTestTables(t, db)
 
 	// 开始事务
-	tx, err := db.Begin()
-	if err != nil {
-		t.Fatalf("开始事务失败: %v", err)
-	}
+	tx := db.Begin()
 
 	// 批量插入用户
 	for i := 1; i <= 10; i++ {
@@ -229,7 +227,7 @@ func TestSQLServerBatchInsert(t *testing.T) {
 	}
 
 	// 提交事务
-	err = tx.Commit()
+	err := tx.Commit()
 	if err != nil {
 		t.Fatalf("提交事务失败: %v", err)
 	}
@@ -389,13 +387,10 @@ func TestSQLServerTransaction(t *testing.T) {
 	// 测试提交事务
 	t.Run("Commit", func(t *testing.T) {
 		// 开始事务
-		tx, err := db.Begin()
-		if err != nil {
-			t.Fatalf("开始事务失败: %v", err)
-		}
+		tx := db.Begin()
 
 		// 插入用户
-		err = tx.Exec(
+		err := tx.Exec(
 			"INSERT INTO Users (Username, Email, Age, Active) VALUES (@p1, @p2, @p3, @p4)",
 			"txUser1", "tx1@example.com", 25, true,
 		)
@@ -445,13 +440,10 @@ func TestSQLServerTransaction(t *testing.T) {
 	// 测试回滚事务
 	t.Run("Rollback", func(t *testing.T) {
 		// 开始事务
-		tx, err := db.Begin()
-		if err != nil {
-			t.Fatalf("开始事务失败: %v", err)
-		}
+		tx := db.Begin()
 
 		// 插入用户
-		err = tx.Exec(
+		err := tx.Exec(
 			"INSERT INTO Users (Username, Email, Age, Active) VALUES (@p1, @p2, @p3, @p4)",
 			"txUser2", "tx2@example.com", 30, true,
 		)
@@ -1213,16 +1205,13 @@ func TestSQLServerQueryBuilderTransaction(t *testing.T) {
 	prepareSQLServerTestTables(t, db)
 
 	// 开始事务
-	tx, err := db.Begin()
-	if err != nil {
-		t.Fatalf("开始事务失败: %v", err)
-	}
+	tx := db.Begin()
 
 	// 在事务中使用Query构建器
 	q := query.NewQuery(tx)
 
 	// 插入用户
-	err = tx.Exec(
+	err := tx.Exec(
 		"INSERT INTO Users (Username, Email, Age, Active) VALUES (@p1, @p2, @p3, @p4)",
 		"txBuilder", "txbuilder@example.com", 30, true,
 	)

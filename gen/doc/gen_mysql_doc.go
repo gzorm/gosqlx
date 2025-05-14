@@ -5,14 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/nguyenthenguyen/docx"
-
 	"strings"
-
 	"time"
 
 	"github.com/gzorm/gosqlx"
+	"github.com/nguyenthenguyen/docx"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -109,7 +106,7 @@ func createDBConnection(config *Config) (*sql.DB, error) {
 	}
 
 	// 获取原生SQL连接
-	return database.GetDBContext().SqlDB, nil
+	return database.SqlDB(), nil
 }
 
 // getAllTables 获取所有表信息
