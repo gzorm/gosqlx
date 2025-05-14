@@ -3,10 +3,12 @@ package test
 import (
 	"context"
 	"fmt"
-	"github.com/gzorm/gosqlx/dialect"
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/gzorm/gosqlx/adapter"
+	"github.com/gzorm/gosqlx/dialect"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/gzorm/gosqlx"
 	"github.com/gzorm/gosqlx/builder"
@@ -1286,7 +1288,7 @@ func TestMySQLAdapterQueryPageWithOrder(t *testing.T) {
 	defer db.Close()
 
 	// 准备测试表
-	prepareTestTables(t, db)
+	//prepareTestTables(t, db)
 
 	// 插入测试数据
 	for i := 1; i <= 20; i++ {
@@ -1424,4 +1426,122 @@ func TestQuery(t *testing.T) {
 			col.Field, col.Type, col.Null, col.Key, col.Default, col.Extra, col.Comment)
 	}
 
+}
+
+// 复杂查询结果结构体
+type UserWithArticleCount struct {
+	ID           int64  `db:"id"`
+	Username     string `db:"username"`
+	Email        string `db:"email"`
+	Age          int    `db:"age"`
+	ArticleCount int    `db:"article_count"`
+}
+
+// 测试 QueryPage 函数处理复杂子查询
+func TestMySQLQueryPageWithSubquery(t *testing.T) {
+	// 初始化数据库
+	db := initMySQLDB(t)
+	defer db.Close()
+
+	// 准备测试表和数据
+	//prepareTestTables(t, db)
+	//prepareTestData(t, db)
+
+	// 获取 MySQL 适配器
+	mysqlAdapter, ok := db.Adapter().(*adapter.MySQL)
+	if !ok {
+		t.Fatalf("无法获取 MySQL 适配器")
+	}
+
+	subquery := `
+		SELECT 
+			u.id, u.username, u.email, u.age, COUNT(a.id) AS article_count
+		FROM 
+			users u
+		LEFT JOIN 
+			articles a ON u.id = a.user_id
+		WHERE 
+			u.age > ?
+		GROUP BY 
+			u.id
+		HAVING 
+			COUNT(a.id) >= ?
+	`
+
+	var results []UserWithArticleCount
+	page := 1
+	pageSize := 10
+
+	total, err := mysqlAdapter.QueryPage(
+		&results,
+		page,
+		pageSize,
+		"("+subquery+") AS subq", // 作为表名传入
+		nil,                      // filter 传 nil
+		db.DB(),
+		20, 1, // SQL参数
+	)
+	if err != nil {
+		t.Fatalf("执行 QueryPage 失败: %v", err)
+	}
+
+	// 验证结果
+	t.Logf("总记录数: %d", total)
+	t.Logf("查询结果: %+v", results)
+
+	// 断言结果不为空
+	assert.Greater(t, len(results), 0, "应该至少有一条记录")
+	assert.Equal(t, total, int64(len(results)), "总记录数应该与结果数量一致")
+
+	// 验证每个结果的文章数量至少为1
+	for _, user := range results {
+		assert.GreaterOrEqual(t, user.ArticleCount, 1, "每个用户的文章数量应该至少为1")
+		assert.Greater(t, user.Age, 20, "每个用户的年龄应该大于20")
+	}
+}
+
+// 准备测试数据
+func prepareTestData(t *testing.T, db *gosqlx.Database) {
+	// 插入测试用户
+	users := []User{
+		{Username: "user1", Email: "user1@example.com", Age: 21, Active: true, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{Username: "user2", Email: "user2@example.com", Age: 22, Active: true, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{Username: "user3", Email: "user3@example.com", Age: 23, Active: true, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{Username: "user4", Email: "user4@example.com", Age: 24, Active: false, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{Username: "user5", Email: "user5@example.com", Age: 25, Active: true, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{Username: "user6", Email: "user6@example.com", Age: 19, Active: true, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+	}
+
+	// 批量插入用户
+	for _, user := range users {
+		result, err := db.ExecWithResult(
+			"INSERT INTO users (username, email, age, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+			user.Username, user.Email, user.Age, user.Active, user.CreatedAt, user.UpdatedAt,
+		)
+		if err != nil {
+			t.Fatalf("插入用户失败: %v", err)
+		}
+
+		userID, _ := result.LastInsertId()
+
+		// 为每个用户插入不同数量的文章
+		articleCount := int(user.Age - 20)
+		if articleCount < 0 {
+			articleCount = 0
+		}
+
+		for i := 0; i < articleCount; i++ {
+			_, err := db.ExecWithResult(
+				"INSERT INTO articles (user_id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+				userID,
+				fmt.Sprintf("%s的文章 #%d", user.Username, i+1),
+				fmt.Sprintf("这是%s的第%d篇文章内容", user.Username, i+1),
+				time.Now(),
+				time.Now(),
+			)
+			if err != nil {
+				t.Fatalf("插入文章失败: %v", err)
+			}
+		}
+	}
 }

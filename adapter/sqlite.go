@@ -310,6 +310,15 @@ func (s *SQLite) QueryPage(out interface{}, page, pageSize int, tableName string
 	var values []interface{}
 
 	switch f := filter.(type) {
+	case nil:
+		// 如果 filter 是 nil，构建基本查询
+		sqlStr = fmt.Sprintf("SELECT * FROM %s", tableName)
+		//把 opts[1:] 作为参数加到 values
+		if len(opts) > 1 {
+			for _, v := range opts[1:] {
+				values = append(values, v)
+			}
+		}
 	case string:
 		// 如果 filter 是 SQL 字符串
 		sqlStr = f
@@ -381,31 +390,57 @@ func (s *SQLite) QueryPage(out interface{}, page, pageSize int, tableName string
 	var total int64
 	var countSQL string
 
-	// 检查是否是简单查询（只有 SELECT ... FROM ... WHERE ...）
-	isSimpleQuery := true
-	complexKeywords := []string{" GROUP BY ", " HAVING ", " DISTINCT ", " UNION "}
-	for _, keyword := range complexKeywords {
-		if strings.Contains(strings.ToUpper(sqlStr), keyword) {
-			isSimpleQuery = false
-			break
+	// 检查是否是复杂查询
+	isComplexQuery := false
+
+	// 检查是否包含子查询 - 通过查找括号内包含 SELECT 关键字
+	if strings.Contains(strings.ToUpper(sqlStr), "(SELECT ") ||
+		strings.Contains(strings.ToUpper(sqlStr), "( SELECT ") {
+		isComplexQuery = true
+	}
+
+	// 检查其他复杂查询关键字
+	complexKeywords := []string{
+		" JOIN ", " LEFT JOIN ", " RIGHT JOIN ", " INNER JOIN ", " OUTER JOIN ",
+		" GROUP BY ", " HAVING ", " DISTINCT ", " UNION ", " INTERSECT ", " EXCEPT ",
+	}
+
+	if !isComplexQuery {
+		for _, keyword := range complexKeywords {
+			if strings.Contains(strings.ToUpper(sqlStr), keyword) {
+				isComplexQuery = true
+				break
+			}
 		}
 	}
 
-	if isSimpleQuery {
+	// 生成随机别名以避免冲突
+	randomAlias := fmt.Sprintf("count_table_%d", time.Now().UnixNano()%10000)
+
+	if !isComplexQuery {
 		// 对于简单查询，直接从表中计数
 		// 提取 FROM 和 WHERE 部分
 		fromIndex := strings.Index(strings.ToUpper(sqlStr), " FROM ")
 		if fromIndex >= 0 {
 			// 获取 FROM 之后的部分
 			fromPart := sqlStr[fromIndex:]
-			countSQL = "SELECT COUNT(*)" + fromPart
+
+			// 检查 FROM 部分是否包含子查询
+			if strings.Contains(strings.ToUpper(fromPart), "(SELECT ") ||
+				strings.Contains(strings.ToUpper(fromPart), "( SELECT ") {
+				// 如果 FROM 部分包含子查询，使用子查询方式
+				countSQL = fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS %s", sqlStr, randomAlias)
+			} else {
+				// 否则直接使用 FROM 部分
+				countSQL = "SELECT COUNT(*)" + fromPart
+			}
 		} else {
 			// 如果无法解析，回退到子查询方式
-			countSQL = fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS count_table", sqlStr)
+			countSQL = fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS %s", sqlStr, randomAlias)
 		}
 	} else {
 		// 对于复杂查询，使用子查询
-		countSQL = fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS count_table", sqlStr)
+		countSQL = fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS %s", sqlStr, randomAlias)
 	}
 
 	err := db.Raw(countSQL, values...).Count(&total).Error
