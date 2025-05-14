@@ -3,13 +3,16 @@ package doc
 import (
 	"database/sql"
 	"fmt"
-	"github.com/unidoc/unioffice/color"
-	"github.com/unidoc/unioffice/measurement"
+	"os"
+	"path/filepath"
+
+	"github.com/nguyenthenguyen/docx"
+
+	"strings"
+
 	"time"
 
 	"github.com/gzorm/gosqlx"
-	"github.com/unidoc/unioffice/document"
-	"github.com/unidoc/unioffice/schema/soo/wml"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -298,187 +301,62 @@ func getIndexes(db *sql.DB, dbName, tableName string) ([]IndexDoc, error) {
 	return indexes, nil
 }
 
-// generateWordDoc 生成Word文档
+// generateWordDoc 使用 docx 生成Word文档
 func generateWordDoc(tables []TableDoc, config *Config) error {
-	// 创建新的Word文档
-	doc := document.New()
+	// 获取当前工作目录
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("无法获取当前工作目录: %v", err)
+	}
+	// 拼接绝对路径
+	templatePath := filepath.Join(wd, "\\gen\\doc\\blank.docx")
 
-	// 添加标题
-	title := doc.AddParagraph()
-	title.Properties().SetAlignment(wml.ST_JcCenter)
-	titleRun := title.AddRun()
-	titleRun.Properties().SetBold(true)
-	titleRun.Properties().SetSize(24)
-	titleRun.AddText(config.Title)
+	r, err := docx.ReadDocxFile(templatePath)
+	if err != nil {
+		return fmt.Errorf("无法打开空白模板: %v", err)
+	}
+	doc := r.Editable()
 
-	// 添加文档信息
-	info := doc.AddParagraph()
-	info.Properties().SetAlignment(wml.ST_JcCenter)
-	infoRun := info.AddRun()
-	infoRun.Properties().SetSize(12)
-	infoRun.AddText(fmt.Sprintf("作者: %s   公司: %s   生成时间: %s",
-		config.Author, config.Company, time.Now().Format("2006-01-02 15:04:05")))
+	// 拼接所有内容
+	var content strings.Builder
+	content.WriteString(fmt.Sprintf("%s\n作者: %s   公司: %s   生成时间: %s\n数据库名称: %s\n\n",
+		config.Title, config.Author, config.Company, time.Now().Format("2006-01-02 15:04:05"), config.DBName))
 
-	// 添加分隔线
-	doc.AddParagraph()
-
-	// 添加数据库信息
-	dbInfo := doc.AddParagraph()
-	dbInfoRun := dbInfo.AddRun()
-	dbInfoRun.Properties().SetBold(true)
-	dbInfoRun.Properties().SetSize(14)
-	dbInfoRun.AddText(fmt.Sprintf("数据库名称: %s", config.DBName))
-
-	doc.AddParagraph()
-
-	// 添加表信息
 	for _, table := range tables {
-		// 表标题
-		tableTitle := doc.AddParagraph()
-		tableTitle.Properties().SetAlignment(wml.ST_JcLeft)
-		tableTitleRun := tableTitle.AddRun()
-		tableTitleRun.Properties().SetBold(true)
-		tableTitleRun.Properties().SetSize(14)
-		tableTitleRun.AddText(fmt.Sprintf("表名: %s", table.TableName))
-
-		// 表注释
+		content.WriteString(fmt.Sprintf("表名: %s\n", table.TableName))
 		if table.TableComment != "" {
-			tableComment := doc.AddParagraph()
-			tableCommentRun := tableComment.AddRun()
-			tableCommentRun.Properties().SetItalic(true)
-			tableCommentRun.AddText(fmt.Sprintf("注释: %s", table.TableComment))
+			content.WriteString(fmt.Sprintf("注释: %s\n", table.TableComment))
 		}
-
-		// 添加列信息表格
-		columnTable := doc.AddTable()
-		// 设置表格边框
-		border := columnTable.Properties().Borders()
-		border.SetAll(wml.ST_BorderSingle, color.Auto, 1*measurement.Point)
-
-		//// 设置表格外观
-		//tblLook := columnTable.Properties().TableLook()
-		//tblLook.FirstRow = wml.ST_OnOffTrue
-		//tblLook.FirstColumn = wml.ST_OnOffTrue
-		//tblLook.LastRow = wml.ST_OnOffFalse
-		//tblLook.LastColumn = wml.ST_OnOffFalse
-		//tblLook.NoHBand = wml.ST_OnOffFalse
-		//tblLook.NoVBand = wml.ST_OnOffTrue
-
-		// 添加表头
-		headerRow := columnTable.AddRow()
-		headers := []string{"列名", "数据类型", "允许空值", "默认值", "键类型", "额外信息", "注释"}
-		for _, header := range headers {
-			cell := headerRow.AddCell()
-			cellPara := cell.AddParagraph()
-			cellRun := cellPara.AddRun()
-			cellRun.Properties().SetBold(true)
-			cellRun.AddText(header)
-		}
-
-		// 添加列数据
+		content.WriteString("| 列名 | 数据类型 | 允许空值 | 默认值 | 键类型 | 额外信息 | 注释 |\n")
+		content.WriteString("|------|----------|----------|--------|--------|----------|------|\n")
 		for _, col := range table.Columns {
-			row := columnTable.AddRow()
-
-			// 列名
-			nameCell := row.AddCell()
-			nameCell.AddParagraph().AddRun().AddText(col.ColumnName)
-
-			// 数据类型
-			typeCell := row.AddCell()
-			typeCell.AddParagraph().AddRun().AddText(col.DataType)
-
-			// 允许空值
-			nullableCell := row.AddCell()
-			nullableCell.AddParagraph().AddRun().AddText(col.IsNullable)
-
-			// 默认值
-			defaultCell := row.AddCell()
-			defaultCell.AddParagraph().AddRun().AddText(col.ColumnDefault)
-
-			// 键类型
-			keyCell := row.AddCell()
-			keyCell.AddParagraph().AddRun().AddText(col.ColumnKey)
-
-			// 额外信息
-			extraCell := row.AddCell()
-			extraCell.AddParagraph().AddRun().AddText(col.Extra)
-
-			// 注释
-			commentCell := row.AddCell()
-			commentCell.AddParagraph().AddRun().AddText(col.ColumnComment)
+			content.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s |\n",
+				col.ColumnName, col.DataType, col.IsNullable, col.ColumnDefault, col.ColumnKey, col.Extra, col.ColumnComment))
 		}
-
-		// 添加主键信息
 		if len(table.PrimaryKeys) > 0 {
-			pkInfo := doc.AddParagraph()
-			pkRun := pkInfo.AddRun()
-			pkRun.Properties().SetBold(true)
-			pkRun.AddText("主键: ")
-			pkRun = pkInfo.AddRun()
-			pkRun.AddText(fmt.Sprintf("%s", table.PrimaryKeys))
+			content.WriteString(fmt.Sprintf("主键: %s\n", strings.Join(table.PrimaryKeys, ", ")))
 		}
-
-		// 添加索引信息
 		if len(table.Indexes) > 0 {
-			idxTitle := doc.AddParagraph()
-			idxTitleRun := idxTitle.AddRun()
-			idxTitleRun.Properties().SetBold(true)
-			idxTitleRun.AddText("索引:")
-
+			content.WriteString("索引:\n")
 			for _, idx := range table.Indexes {
 				if idx.IndexName == "PRIMARY" {
-					continue // 主键索引已经显示过了
+					continue
 				}
-
-				idxInfo := doc.AddParagraph()
-				// 设置左缩进 720 twips（0.5英寸）
-				para := idxInfo.X()
-				if para.PPr == nil {
-					para.PPr = wml.NewCT_PPr()
-				}
-				if para.PPr.Ind == nil {
-					para.PPr.Ind = wml.NewCT_Ind()
-				}
-				val := int64(720)
-
-				left := wml.ST_SignedTwipsMeasure{
-					Int64:               &val,
-					ST_UniversalMeasure: nil,
-				}
-				para.PPr.Ind.LeftAttr = &left
-
-				idxRun := idxInfo.AddRun()
-				idxRun.Properties().SetBold(true)
-				idxRun.AddText(fmt.Sprintf("%s: ", idx.IndexName))
-
-				idxRun = idxInfo.AddRun()
 				idxType := "普通索引"
 				if idx.IsUnique {
 					idxType = "唯一索引"
 				}
-				idxRun.AddText(fmt.Sprintf("类型=%s, 列=%s", idxType, idx.Columns))
-				//idxInfo.Properties().SetIndentation(wml.NewCT_Ind())
-				//idxInfo.Properties().Indentation().SetLeft(720) // 缩进0.5英寸
-
-				idxRun = idxInfo.AddRun()
-				idxRun.Properties().SetBold(true)
-				idxRun.AddText(fmt.Sprintf("%s: ", idx.IndexName))
-
-				idxRun = idxInfo.AddRun()
-				idxType = "普通索引"
-				if idx.IsUnique {
-					idxType = "唯一索引"
-				}
-				idxRun.AddText(fmt.Sprintf("类型=%s, 列=%s", idxType, idx.Columns))
+				content.WriteString(fmt.Sprintf("  %s: 类型=%s, 列=%s\n", idx.IndexName, idxType, strings.Join(idx.Columns, ",")))
 			}
 		}
-
-		// 添加分隔段落
-		doc.AddParagraph()
+		content.WriteString("\n")
 	}
 
-	// 保存文档
-	return doc.SaveToFile(config.OutputPath)
+	// 替换模板中的占位符（假设模板有 {{content}} 占位符）
+	doc.Replace("{{content}}", content.String(), -1)
+
+	// 保存Word文档
+	return doc.WriteToFile(config.OutputPath)
 }
 
 // GenerateExcelDoc 生成Excel格式的数据库文档

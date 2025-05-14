@@ -18,7 +18,7 @@ func gen_myql_doc() {
 	config := &doc.Config{
 		DBType:     gosqlx.MySQL,
 		Source:     "root:root@tcp(localhost:3306)/testdb?charset=utf8mb4&parseTime=True&loc=Local",
-		DBName:     "mydb",
+		DBName:     "testdb",
 		OutputPath: "database_doc.docx",
 		Title:      "数据库设计文档",
 		Author:     "系统管理员",
@@ -36,8 +36,8 @@ func gen_myql_doc() {
 	// 如果需要生成Excel格式的文档
 	excelConfig := &doc.Config{
 		DBType:     gosqlx.MySQL,
-		Source:     "root:password@tcp(localhost:3306)/mydb?charset=utf8mb4&parseTime=True&loc=Local",
-		DBName:     "mydb",
+		Source:     "root:root@tcp(localhost:3306)/testdb?charset=utf8mb4&parseTime=True&loc=Local",
+		DBName:     "testdb",
 		OutputPath: "database_doc.xlsx",
 		Title:      "数据库设计文档",
 		Author:     "系统管理员",

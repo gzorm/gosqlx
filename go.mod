@@ -6,9 +6,9 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.34.0
 	github.com/go-sql-driver/mysql v1.7.0
 	github.com/mattn/go-sqlite3 v1.14.22
+	github.com/nguyenthenguyen/docx v0.0.0-20230621112118-9c8e795a11db
 	github.com/seelly/gorm-oracle v1.0.1
 	github.com/stretchr/testify v1.10.0
-	github.com/unidoc/unioffice v1.39.0
 	github.com/xuri/excelize/v2 v2.9.1
 	go.mongodb.org/mongo-driver v1.17.3
 	gorm.io/driver/clickhouse v0.6.1
