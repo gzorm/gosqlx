@@ -18,6 +18,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -573,34 +574,37 @@ func (d *Database) QueryPage(dbOption interface{}, out interface{}, page, pageSi
 func (d *Database) Lock(out interface{}, ids ...interface{}) error {
 	// 添加死锁检测
 	d.deadlock.Attach(out)
-	// MongoDB 不支持标准的 FOR UPDATE 锁定
+
+	// MongoDB 不支持标准的锁定
 	if d.dbType == MongoDB {
-		// 对于 MongoDB，可以使用 findAndModify 操作或事务来实现锁定
-		// 这里简化处理，仅返回查询结果
 		if len(ids) > 0 {
 			return d.Model(out).Where(reflectKeys(out), ids...).FirstOrInit(out).Error
 		}
 		return d.Model(out).FirstOrInit(out, ids...).Error
 	}
 
-	// 根据数据库类型选择锁定语法
-	lockOption := "FOR UPDATE"
+	// SQLServer 使用特殊语法
+	if d.dbType == SQLServer {
+		if len(ids) > 0 {
+			return d.Model(out).Set("gorm:query_option", "WITH (UPDLOCK, ROWLOCK)").Where(reflectKeys(out), ids...).FirstOrInit(out).Error
+		}
+		return d.Model(out).Set("gorm:query_option", "WITH (UPDLOCK, ROWLOCK)").FirstOrInit(out, ids...).Error
+	}
+
+	// 其他数据库使用 clause.Locking
+	var locking clause.Locking
+
 	switch d.dbType {
-	case SQLServer:
-		lockOption = "WITH (UPDLOCK, ROWLOCK)"
 	case Oracle:
-		lockOption = "FOR UPDATE NOWAIT"
-	case PostgresSQL:
-		lockOption = "FOR UPDATE"
+		locking = clause.Locking{Strength: "UPDATE", Options: "NOWAIT"}
+	default:
+		locking = clause.Locking{Strength: "UPDATE"}
 	}
 
-	// 多键查询
 	if len(ids) > 0 {
-		return d.Model(out).Set("gorm:query_option", lockOption).Where(reflectKeys(out), ids...).FirstOrInit(out).Error
+		return d.Model(out).Clauses(locking).Where(reflectKeys(out), ids...).FirstOrInit(out).Error
 	}
-
-	// 单键查询
-	return d.Model(out).Set("gorm:query_option", lockOption).FirstOrInit(out, ids...).Error
+	return d.Model(out).Clauses(locking).FirstOrInit(out, ids...).Error
 }
 
 // LockWhere 根据条件锁定记录
@@ -619,105 +623,118 @@ func (d *Database) LockWhere(out interface{}, where string, values ...interface{
 // LockOrder 按顺序锁定记录
 func (d *Database) LockOrder(out interface{}, order, where string, values ...interface{}) error {
 	d.deadlock.Attach(out)
-	// MongoDB 不支持标准的 FOR UPDATE 锁定
+
+	// MongoDB 不支持标准的锁定
 	if d.dbType == MongoDB {
 		// 对于 MongoDB，可以使用 findAndModify 操作或事务来实现锁定
 		// 这里简化处理，仅返回查询结果
 		return d.Model(out).Where(formatWhere(where), values...).Order(order).FirstOrInit(out).Error
 	}
-	// 根据数据库类型选择锁定语法
-	lockOption := "FOR UPDATE"
+
+	// SQLServer 使用特殊语法
+	if d.dbType == SQLServer {
+		return d.Model(out).Set("gorm:query_option", "WITH (UPDLOCK, ROWLOCK)").Where(formatWhere(where), values...).Order(order).FirstOrInit(out).Error
+	}
+
+	// 其他数据库使用 clause.Locking
+	var locking clause.Locking
+
 	switch d.dbType {
-	case MySQL:
-		lockOption = "FOR UPDATE"
-	case SQLServer:
-		lockOption = "WITH (UPDLOCK, ROWLOCK)"
 	case Oracle:
-		lockOption = "FOR UPDATE NOWAIT"
-	case PostgresSQL:
-		lockOption = "FOR UPDATE"
-	case TiDB:
-		lockOption = "FOR UPDATE" // 目前与MySQL相同，但将来可能有特殊选项
+		locking = clause.Locking{Strength: "UPDATE", Options: "NOWAIT"}
 	case SQLite:
 		// SQLite 只在事务中支持 FOR UPDATE
 		if d.db.Statement.ConnPool != nil && d.db.Statement.ConnPool.(*sql.Tx) != nil {
-			lockOption = "FOR UPDATE"
+			locking = clause.Locking{Strength: "UPDATE"}
 		} else {
 			// 如果不在事务中，可以记录警告或自动开启事务
-			lockOption = "FOR UPDATE"
+			locking = clause.Locking{Strength: "UPDATE"}
 		}
+	default:
+		locking = clause.Locking{Strength: "UPDATE"}
 	}
 
-	return d.Model(out).Set("gorm:query_option", lockOption).Where(formatWhere(where), values...).Order(order).FirstOrInit(out).Error
+	return d.Model(out).Clauses(locking).Where(formatWhere(where), values...).Order(order).FirstOrInit(out).Error
 }
 
 // LockShare 共享锁定记录
 func (d *Database) LockShare(out interface{}, ids ...interface{}) error {
 	d.deadlock.Attach(out)
 
-	// 根据数据库类型选择共享锁语法
-	lockOption := "FOR SHARE"
-	switch d.dbType {
-	case MySQL:
-		lockOption = "FOR SHARE"
-	case SQLServer:
-		lockOption = "WITH (HOLDLOCK, ROWLOCK)"
-	case Oracle:
-		lockOption = "FOR UPDATE NOWAIT"
-	case PostgresSQL:
-		lockOption = "FOR SHARE"
-	case TiDB:
-		lockOption = "FOR SHARE" // 目前与MySQL相同，但将来可能有特殊选项
-	case SQLite:
-		// SQLite 不支持 FOR SHARE，但会默默忽略它
-		// 可以使用 FOR UPDATE 代替，或者不使用锁
-		lockOption = "FOR UPDATE" // 使用排他锁代替共享锁
+	// MongoDB 不支持标准的锁定
+	if d.dbType == MongoDB {
+		if len(ids) > 0 {
+			return d.Model(out).Where(reflectKeys(out), ids...).FirstOrInit(out).Error
+		}
+		return d.Model(out).FirstOrInit(out, ids...).Error
 	}
 
-	// 多键查询
+	// SQLServer 使用特殊语法
+	if d.dbType == SQLServer {
+		if len(ids) > 0 {
+			return d.Model(out).Set("gorm:query_option", "WITH (HOLDLOCK, ROWLOCK)").Where(reflectKeys(out), ids...).FirstOrInit(out).Error
+		}
+		return d.Model(out).Set("gorm:query_option", "WITH (HOLDLOCK, ROWLOCK)").FirstOrInit(out, ids...).Error
+	}
+
+	// Oracle 使用 UPDATE NOWAIT
+	if d.dbType == Oracle {
+		if len(ids) > 0 {
+			return d.Model(out).Clauses(clause.Locking{Strength: "UPDATE", Options: "NOWAIT"}).Where(reflectKeys(out), ids...).FirstOrInit(out).Error
+		}
+		return d.Model(out).Clauses(clause.Locking{Strength: "UPDATE", Options: "NOWAIT"}).FirstOrInit(out, ids...).Error
+	}
+
+	// SQLite 不支持 SHARE 锁，使用 UPDATE 锁代替
+	if d.dbType == SQLite {
+		if len(ids) > 0 {
+			return d.Model(out).Clauses(clause.Locking{Strength: "UPDATE"}).Where(reflectKeys(out), ids...).FirstOrInit(out).Error
+		}
+		return d.Model(out).Clauses(clause.Locking{Strength: "UPDATE"}).FirstOrInit(out, ids...).Error
+	}
+
+	// 其他数据库使用标准的 SHARE 锁
 	if len(ids) > 0 {
-		return d.Model(out).Set("gorm:query_option", lockOption).Where(reflectKeys(out), ids...).FirstOrInit(out).Error
+		return d.Model(out).Clauses(clause.Locking{Strength: "SHARE"}).Where(reflectKeys(out), ids...).FirstOrInit(out).Error
 	}
-
-	// 单键查询
-	return d.Model(out).Set("gorm:query_option", lockOption).FirstOrInit(out, ids...).Error
+	return d.Model(out).Clauses(clause.Locking{Strength: "SHARE"}).FirstOrInit(out, ids...).Error
 }
 
 // LockMulti 锁定多条记录
 func (d *Database) LockMulti(out interface{}, where string, values ...interface{}) error {
 	d.deadlock.Attach(out)
 
-	// MongoDB 不支持标准的 FOR UPDATE 锁定
+	// MongoDB 不支持标准的锁定
 	if d.dbType == MongoDB {
 		// 对于 MongoDB，可以使用 findAndModify 操作或事务来实现锁定
 		// 这里简化处理，仅返回查询结果
 		return d.Model(out).Where(formatWhere(where), values...).Find(out).Error
 	}
 
-	// 根据数据库类型选择锁定语法
-	lockOption := "FOR UPDATE"
+	// SQLServer 使用特殊语法
+	if d.dbType == SQLServer {
+		return d.Model(out).Set("gorm:query_option", "WITH (UPDLOCK, ROWLOCK)").Where(formatWhere(where), values...).Find(out).Error
+	}
+
+	// 其他数据库使用 clause.Locking
+	var locking clause.Locking
+
 	switch d.dbType {
-	case MySQL:
-		lockOption = "FOR UPDATE"
-	case SQLServer:
-		lockOption = "WITH (UPDLOCK, ROWLOCK)"
 	case Oracle:
-		lockOption = "FOR UPDATE NOWAIT"
-	case PostgresSQL:
-		lockOption = "FOR UPDATE"
-	case TiDB:
-		lockOption = "FOR UPDATE" // 目前与MySQL相同，但将来可能有特殊选项
+		locking = clause.Locking{Strength: "UPDATE", Options: "NOWAIT"}
 	case SQLite:
 		// SQLite 只在事务中支持 FOR UPDATE
 		if d.db.Statement.ConnPool != nil && d.db.Statement.ConnPool.(*sql.Tx) != nil {
-			lockOption = "FOR UPDATE"
+			locking = clause.Locking{Strength: "UPDATE"}
 		} else {
 			// 如果不在事务中，可以记录警告或自动开启事务
-			lockOption = "FOR UPDATE"
+			locking = clause.Locking{Strength: "UPDATE"}
 		}
+	default:
+		locking = clause.Locking{Strength: "UPDATE"}
 	}
 
-	return d.Model(out).Set("gorm:query_option", lockOption).Where(formatWhere(where), values...).Find(out).Error
+	return d.Model(out).Clauses(locking).Where(formatWhere(where), values...).Find(out).Error
 }
 
 // ==================== 插入操作 ====================
